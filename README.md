@@ -1,12 +1,12 @@
 It works but
 USE AT OWN RISK
-I AM NOT RESPONSIBLE FOR ANY FILE LOSS
-Still in devlopment
+I AM NOT RESPONSIBLE FOR ANY DATA LOSS
+Still in development
 
 
 # FFLocker
 
-**FFLocker** (File Folder Locker) is a high-performance .NET console application that provides military-grade cryptographic "locking" of directories by encrypting files and obfuscating both file and folder names. It features advanced streaming encryption for unlimited file sizes, chunk-level intermittent encryption for maximum speed, and parallel processing for optimal performance.
+**FFLocker** (File Folder Locker) is a military-grade .NET console application that provides cryptographic "locking" of directories by encrypting files and obfuscating both file and folder names. It features advanced streaming encryption for unlimited file sizes, triple-redundant metadata storage, and parallel processing for optimal performance and reliability.
 
 ## Table of Contents
 
@@ -15,13 +15,7 @@ Still in devlopment
 * [Prerequisites](#prerequisites)
 * [Setup & Build](#setup--build)
 * [Usage](#usage)
-  * [Basic Usage](#basic-usage)
-  * [Fast Mode](#fast-mode)
-  * [Advanced Options](#advanced-options)
 * [How It Works](#how-it-works)
-  * [Streaming Architecture](#streaming-architecture)
-  * [Chunk-Level Fast Mode](#chunk-level-fast-mode)
-  * [Security Model](#security-model)
 * [Technical Specifications](#technical-specifications)
 * [Security Considerations](#security-considerations)
 * [Limitations](#limitations)
@@ -31,46 +25,45 @@ Still in devlopment
 
 ### 🔒 **Security**
 * **AES-256-GCM encryption**: Industry-standard authenticated encryption providing both confidentiality and integrity
+* **Enhanced key derivation**: 600,000 PBKDF2 iterations with SHA-256 for maximum GPU attack resistance
+* **Per-file unique salts**: Each file uses a cryptographically unique salt for perfect forward secrecy
 * **Per-file keys**: Each file uses a unique key derived from the master key via HMAC-SHA256
-* **PBKDF2 key derivation**: 100,000 iterations with SHA-256 for strong password protection
 * **Cryptographic nonces**: Unique 96-bit nonces per chunk prevent replay attacks
 * **Tamper detection**: Any modification to encrypted files is automatically detected and rejected
+
+### 🛡️ **Reliability**
+* **Triple-redundant metadata**: Primary, backup, and recovery containers ensure no single point of failure
+* **Atomic operations**: All file operations are atomic to prevent corruption during interruption
+* **Automatic fallback**: If primary metadata fails, automatically tries backup and recovery containers
+* **Integrity verification**: Multi-layer hash verification for all metadata and file mappings
 
 ### ⚡ **Performance**
 * **Streaming encryption**: Handles files of any size with constant 1MB memory usage
 * **Parallel processing**: Multi-threaded encryption/decryption utilizing all CPU cores
-* **Chunk-level fast mode**: Encrypts only 6.25% of data for 40-60% speed improvement
 * **Optimized I/O**: Large buffers and efficient disk operations for maximum throughput
-* **Real-time progress**: Live speed reporting and progress tracking with ETA
+* **Real-time progress**: Live speed reporting and progress tracking
+* **Adaptive parallelism**: Automatically adjusts threading for optimal performance
 
 ### 🛡️ **Obfuscation**
-* **File name randomization**: All files get random `.ffl` names hiding original identities
-* **Directory name obfuscation**: Folders renamed with random identifiers
+* **File name randomization**: All files get cryptographically secure random `.ffl` names
+* **Directory name obfuscation**: Folders renamed with secure random identifiers
 * **Structure hiding**: Complete filesystem layout obfuscation
-* **Single metadata container**: Encrypted mapping stored in `.fflcontainer`
-
-### 🖥️ **Scalability**
-* **Unlimited file sizes**: No memory constraints - handles TB-scale files
-* **Adaptive parallelism**: Automatically adjusts threading for large files
-* **Memory efficient**: Constant memory usage regardless of dataset size
-* **Enterprise ready**: Handles thousands of files efficiently
+* **No fingerprinting**: No identifying headers or metadata signatures
 
 ## Performance
 
-### Benchmark Results (2.3GB test , 147 Files, 21 Folders (Game Folder) on SATA SSD):
+### Benchmark Results (2.3GB dataset, 147 Files, 21 Folders on SATA SSD):
 
-| Mode | Lock Time | Unlock Time | Lock Speed | Unlock Speed | Improvement |
-|------|-----------|-------------|------------|--------------|-------------|
-| **Standard** | 6.57s | 6.70s | 365.2 MB/s | 358.1 MB/s | Baseline |
-| **Fast** | 4.04s | 3.73s | 593.1 MB/s | 643.5 MB/s | **38-44% faster** |
+| Operation | Time | Speed | Details |
+|-----------|------|-------|---------|
+| **Lock** | 4.09s | 586.6 MB/s | Full AES-256-GCM encryption |
+| **Unlock** | 8.37s | 287.0 MB/s | Full decryption with verification |
 
-**Fast mode achieves 600+ MB/s** encryption/decryption speeds while maintaining cryptographic security through chunk-level intermittent encryption.
-
-### Speed Comparison:
-- **38% faster encryption** (6.57s → 4.04s)
-- **44% faster decryption** (6.70s → 3.73s)
-- **63% higher throughput** (365 MB/s → 593 MB/s)
-- **Same security guarantees** - files remain completely unusable
+**Performance characteristics:**
+- **586+ MB/s encryption speed** with full security
+- **Triple-redundant metadata** with minimal performance impact
+- **Automatic fallback recovery** ensures reliability
+- **Constant memory usage** regardless of file sizes
 
 ## Prerequisites
 
@@ -95,61 +88,70 @@ The executable will be in `bin/Release/net6.0-windows/`.
 
 ## Usage
 
-### Basic Usage
+### Basic Operations
 
 ```bash
-# Encrypt and lock a folder (full encryption)
+# Encrypt and lock a folder
 dotnet run -- lock "C:\Path\To\Folder"
 
 # Decrypt and unlock the folder
 dotnet run -- unlock "C:\Path\To\Folder"
 ```
 
+### Example Session
+
+**Locking a folder:**
+```bash
+dotnet run -- lock "K:\Downloads_3\folder"
+Password: ****
+Encrypting 147 files (2.3GB) with dual-redundant metadata...
+Progress: 17.0% (25/147) - 18.7 MB/s
+Progress: 34.0% (50/147) - 84.0 MB/s
+Progress: 51.0% (75/147) - 114.6 MB/s
+Progress: 68.0% (100/147) - 117.6 MB/s
+Progress: 85.0% (125/147) - 158.1 MB/s
+Progress: 100.0% (147/147) - 590.9 MB/s
+Saved primary metadata container
+Saved backup metadata container
+Saved recovery metadata container
+Folder secured with triple-redundant metadata in 4.09s - Rate: 586.6 MB/s
+Three metadata containers created for maximum reliability
+```
+
+**Unlocking a folder:**
+```bash
+dotnet run -- unlock "K:\Downloads_3\folder"
+Password: ****
+Attempting to load primary metadata container...
+Successfully loaded primary metadata container
+Loaded metadata: 147 files, 21 directories
+Restoring directory structure...
+Decrypting 147 files...
+Progress: 17.0% (25/147)
+Progress: 34.0% (50/147)
+Progress: 51.0% (75/147)
+Progress: 68.0% (100/147)
+Progress: 85.0% (125/147)
+Progress: 100.0% (147/147)
+Folder unlocked in 8.37s
+```
+
+### What Happens During Operations
+
 **During lock:**
 - Enter your password when prompted
-- All files are encrypted using streaming AES-GCM
-- Files get random `.ffl` names at the root directory
-- Directories are obfuscated with random names
-- Original files/folders are securely removed
-- `.fflcontainer` metadata file is created with encrypted mapping
+- All files are encrypted using streaming AES-256-GCM with unique salts
+- Files get cryptographically secure random `.ffl` names
+- Directories are obfuscated with secure random names
+- Original files/folders are securely deleted with random overwriting
+- Three metadata containers are created for maximum reliability
 
 **During unlock:**
 - Enter the same password used for locking
+- System attempts to load primary metadata container, with automatic fallback to backup/recovery
 - Directory structure is restored first (shallow to deep)
 - Files are decrypted back to original locations using streaming
-- All obfuscated files and metadata are cleaned up
-
-### Fast Mode
-
-For **significantly faster performance** with large files:
-
-```bash
-# Lock with chunk-level intermittent encryption (40-60% faster)
-dotnet run -- lock "C:\Path\To\Folder" --fast
-
-# Unlock (automatically detects and handles fast mode)
-dotnet run -- unlock "C:\Path\To\Folder"
-```
-
-**Fast mode details:**
-- Encrypts **first 64KB of every 1MB chunk** (6.25% encryption ratio)
-- Files become **completely unusable** while maintaining cryptographic security
-- **40-60% speed improvement** over full encryption
-- **Automatic detection** during decryption - no special flags needed
-
-### Advanced Options
-
-```bash
-# Custom partial encryption threshold (default: 50MB)
-dotnet run -- lock "C:\Path\To\Folder" --fast --partial-threshold=25MB
-
-# Available size units: KB, MB, GB
-dotnet run -- lock "C:\Path\To\Folder" --fast --partial-threshold=500KB
-```
-
-**Options:**
-- `--fast`: Enable chunk-level intermittent encryption for speed
-- `--partial-threshold=SIZE`: Files larger than SIZE use fast mode (default: 50MB)
+- All obfuscated files and metadata containers are cleaned up
 
 ## How It Works
 
@@ -163,101 +165,100 @@ FFLocker uses a **streaming encryption model** that provides several key advanta
 4. **Parallel Safety**: Multiple large files can be processed simultaneously
 
 ```
-File → 1MB Chunks → Per-Chunk Encryption → Random .ffl Output
+File → 1MB Chunks → Per-Chunk Encryption → Secure Random .ffl Output
 [Chunk 1: Nonce₁ + AES-GCM₁ + Tag₁]
 [Chunk 2: Nonce₂ + AES-GCM₂ + Tag₂]
 [Chunk N: NonceN + AES-GCMN + TagN]
 ```
 
-### Chunk-Level Fast Mode
+### Triple-Redundant Metadata System
 
-Fast mode implements **ransomware-inspired** chunk-level intermittent encryption:
+FFLocker uses a proven dual-redundant approach similar to VeraCrypt's header backup system:
 
 ```
-Standard Mode: [████████████████████████████████] 100% encrypted
-Fast Mode:     [████▓▓▓▓████▓▓▓▓████▓▓▓▓████▓▓▓▓] 6.25% encrypted
-
-Where ████ = 64KB encrypted, ▓▓▓▓ = 960KB unencrypted per 1MB chunk
+.fflmeta    (Primary metadata container)
+.fflbkup    (Backup metadata container)  
+.fflrcvr    (Recovery metadata container)
 ```
 
-**Why this works:**
-- **Breaks file headers**: First 64KB contains critical file format information
-- **Disrupts structure**: Regular corruption throughout file makes it unusable
-- **Maintains authenticity**: Each encrypted portion has AES-GCM authentication
-- **Minimal metadata**: No per-byte tracking, just chunk-level information
+**Benefits:**
+- **No single point of failure**: If one container is corrupted, others provide recovery
+- **Automatic fallback**: System tries primary → backup → recovery automatically
+- **Proven reliability**: Based on established encryption tool architectures
+- **Integrity verification**: Each container includes verification hashes
 
 ### Security Model
 
-1. **Master Key Derivation**: `PBKDF2(password + salt, 100,000 iterations) → 256-bit key`
-2. **Per-File Keys**: `HMAC-SHA256(master_key, relative_path) → unique 256-bit key`
-3. **Chunk Nonces**: `master_nonce ⊕ chunk_index → unique 96-bit nonce`
-4. **Authentication**: Each chunk authenticated with 128-bit GCM tag
+1. **Master Key Derivation**: `PBKDF2(password + global_salt, 600,000 iterations) → 256-bit key`
+2. **Per-File Salts**: Each file gets a unique 256-bit cryptographic salt
+3. **Per-File Keys**: `HMAC-SHA256(master_key, file_path + file_salt) → unique 256-bit key`
+4. **Chunk Nonces**: Each chunk gets a cryptographically secure random 96-bit nonce
+5. **Authentication**: Each chunk authenticated with 128-bit GCM tag
 
 ## Technical Specifications
 
 ### File Format
 
-**Full Encryption Mode:**
+**Encrypted File Structure:**
 ```
-Header: [Mode=0][MasterNonce][FileSize]
-Chunks: [ChunkSize][Ciphertext][Tag] × N
-```
-
-**Fast Mode:**
-```
-Header: [Mode=1][MasterNonce][FileSize][ChunkSize][EncryptSize]
-Chunks: [ChunkSize][EncryptedBytes][ModifiedChunkData][Tag] × N
+Header: [FileSize]
+Chunks: [Nonce][ChunkSize][Ciphertext][Tag] × N
 ```
 
 ### Metadata Container Format
 ```
-.fflcontainer:
-DO NOT DELETE THIS FILE
-It contains the key to decrypt your files.
-salt:
-iv:
-tag:
-cipher:
+.fflmeta/.fflbkup/.fflrcvr:
+# FFLocker Dual-Redundant Metadata Container
+# Container Type: Primary/Backup/Recovery
+# Created: [timestamp] UTC
+version:2.0
+container_id:[0,1,2]
+global_salt:[base64]
+iv:[base64]
+tag:[base64]
+data:[base64]
 ```
 
 ### Cryptographic Parameters
-- **Encryption**: AES-256-GCM
-- **Key Derivation**: PBKDF2-SHA256, 100,000 iterations
-- **Nonce Size**: 96 bits (unique per chunk)
+- **Encryption**: AES-256-GCM (authenticated encryption)
+- **Key Derivation**: PBKDF2-SHA256, 600,000 iterations (GPU-resistant)
+- **Nonce Size**: 96 bits (cryptographically secure random per chunk)
 - **Authentication Tag**: 128 bits per chunk
-- **Salt Size**: 128 bits (random per operation)
+- **Global Salt**: 256 bits (random per operation)
+- **Per-File Salt**: 256 bits (unique per file)
 
 ### Performance Characteristics
 - **Memory Usage**: Constant 1MB per file operation
-- **Parallelism**: Auto-adjusted based on file sizes
+- **Parallelism**: Auto-adjusted based on file sizes and system resources
 - **Chunk Size**: 1MB for optimal I/O performance
-- **Fast Mode Ratio**: 64KB encrypted per 1MB (6.25%)
+- **Encryption Ratio**: 100% - all data is fully encrypted
 
 ## Security Considerations
 
 ### Password Security
 - **Use strong passwords**: High entropy recommended (16+ characters)
 - **No password recovery**: Lost passwords mean permanent data loss
-- **Brute force protection**: 100,000 PBKDF2 iterations (~100ms per attempt)
+- **Enhanced brute force protection**: 600,000 PBKDF2 iterations significantly increases attack cost
 
 ### Cryptographic Strength
 - **NIST-approved algorithms**: AES-256-GCM, PBKDF2-SHA256
-- **Perfect forward secrecy**: Unique keys per file
+- **Perfect forward secrecy**: Unique keys and salts per file
 - **Authenticated encryption**: Prevents tampering and forgery
 - **Cryptographic randomness**: Hardware-based random number generation
+- **GPU attack resistance**: Enhanced iteration count protects against specialized hardware
 
 ### Threat Model
 - ✅ **Protects against**: File system access, data theft, forensic analysis
 - ✅ **Detects tampering**: Any file modification breaks authentication
-- ✅ **Fast mode security**: Files become completely unusable despite partial encryption
+- ✅ **Prevents single points of failure**: Triple-redundant metadata recovery
+- ✅ **Resists GPU attacks**: Enhanced key derivation parameters
 - ⚠️ **Does not protect against**: Memory analysis while unlocked, keyloggers, coercion
 
-### Fast Mode Security Analysis
-Even with only 6.25% encryption, fast mode provides strong security because:
-- **File headers destroyed**: Most applications cannot open corrupted files
-- **Regular corruption**: Encrypted chunks distributed throughout file
-- **Cryptographic authentication**: Prevents partial recovery attacks
-- **Format destruction**: Media files, documents, executables become unusable
+### Security Features
+- **Triple-redundant recovery**: Multiple metadata containers prevent data loss
+- **Atomic operations**: Prevents corruption during interruption
+- **Secure deletion**: Original files overwritten with random data before deletion
+- **No metadata leakage**: No identifying signatures or plaintext headers
 
 ## Limitations
 
@@ -271,12 +272,7 @@ Even with only 6.25% encryption, fast mode provides strong security because:
 - **Platform dependency**: Requires Windows CNG for AES-GCM
 - **Antivirus interference**: May be flagged due to encryption behavior
 - **Network drive performance**: Reduced speeds on network storage
-- **Large dataset time**: Very large datasets still require significant time
-
-### Fast Mode Considerations
-- **Threshold-based**: Only applies to files larger than 50MB by default
-- **Format-dependent effectiveness**: Some file types more resilient to partial corruption
-- **Recovery impossible**: No way to recover partially encrypted files without password
+- **Large dataset time**: Very large datasets still require significant processing time
 
 ## ⚠️ Important Warnings
 
@@ -303,6 +299,7 @@ For optimal performance:
 - Use SSDs for both source and temporary storage
 - Ensure adequate free disk space (2x dataset size during encryption)
 - Close unnecessary applications to free up CPU cores
-- Use fast mode for large media files and archives
+- Ensure antivirus exclusions are configured properly
 
-**Remember: FFLocker provides strong encryption for sensitive data. Use responsibly and always maintain secure backups of important files.**
+**Remember: FFLocker provides military-grade encryption for sensitive data. Use responsibly and always maintain secure backups of important files.
+In the end your password determines the strength of this program**
