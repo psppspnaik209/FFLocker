@@ -40,6 +40,8 @@ ScaffoldingReadMe.txt
 ~$*
 *~
 CodeCoverage/
+*.zip
+/tempstuff
 
 # MSBuild Binary and Structured Log
 *.binlog
