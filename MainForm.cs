@@ -36,11 +36,21 @@ namespace FFLocker
         private Operation _currentOperation = Operation.None;
         private AppSettings _settings;
         private ToolTip _toolTip = new ToolTip();
+        private int _baseHeight;
+        private const int PanelHeight = 150;
 
         public MainForm(AppSettings settings)
         {
             _settings = settings;
             InitializeComponent();
+            try
+            {
+                this.Icon = new Icon(@"img\256x256_icon.ico");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Error loading icon: " + ex.Message);
+            }
             ApplyTheme();
             LoadWindowPosition();
             InitializeToolTips();
@@ -48,8 +58,18 @@ namespace FFLocker
             // Unsubscribe from the event before setting the initial state
             chkContextMenu.CheckedChanged -= chkContextMenu_CheckedChanged;
             chkContextMenu.Checked = RegistryManager.IsContextMenuEnabled();
-            // Subscribe back to the event
             chkContextMenu.CheckedChanged += chkContextMenu_CheckedChanged;
+
+            chkShowInfo.CheckedChanged -= chkShowInfo_CheckedChanged;
+            chkShowInfo.Checked = _settings.ShowInfo;
+            chkShowInfo.CheckedChanged += chkShowInfo_CheckedChanged;
+
+            cmbDisplayNameType.SelectedIndex = 0;
+            
+            _baseHeight = panelMain.Height + flowLayoutPanelControls.Height + 40;
+            this.Height = _baseHeight;
+
+            UpdateUIVisibility();
         }
 
         private void InitializeToolTips()
@@ -102,10 +122,10 @@ namespace FFLocker
             c.ForeColor = foreColor;
             c.BackColor = backColor;
 
-            if (c is TextBox || c is Button || c is CheckBox || c is RadioButton)
+            if (c is TextBox || c is Button || c is CheckBox || c is RadioButton || c is ListBox || c is ComboBox || c is Panel || c is TableLayoutPanel || c is FlowLayoutPanel)
             {
-                c.BackColor = controlBackColor;
-                c.ForeColor = controlForeColor;
+                c.BackColor = backColor;
+                c.ForeColor = foreColor;
             }
 
             foreach (Control child in c.Controls)
@@ -164,6 +184,12 @@ namespace FFLocker
         #region UI Event Handlers
         private void btnBrowse_Click(object? sender, EventArgs e)
         {
+            if (!rbFile.Checked && !rbFolder.Checked)
+            {
+                MessageBox.Show("Please select either File or Folder.", "Selection Required", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
             if (rbFile.Checked)
             {
                 using (var ofd = new OpenFileDialog())
@@ -253,10 +279,26 @@ namespace FFLocker
             HidePasswordPanel();
             SetOperationUIEnabled(false);
 
-            var progress = new Progress<int>(p => progressBar.Value = p);
+            var progress = new Progress<int>(p => {
+                if (this.InvokeRequired)
+                {
+                    this.Invoke(new Action(() => progressBar.Value = p));
+                }
+                else
+                {
+                    progressBar.Value = p;
+                }
+            });
             var logger = new Progress<string>(m => {
                 if (chkShowInfo.Checked) {
-                    txtLog.AppendText(m + Environment.NewLine);
+                    if (this.InvokeRequired)
+                    {
+                        this.Invoke(new Action(() => txtLog.AppendText(m + Environment.NewLine)));
+                    }
+                    else
+                    {
+                        txtLog.AppendText(m + Environment.NewLine);
+                    }
                 }
             });
 
@@ -288,6 +330,11 @@ namespace FFLocker
                 _currentOperation = Operation.None;
                 SetOperationUIEnabled(true);
                 progressBar.Value = 0;
+                
+                if (panelLockedItems.Visible)
+                {
+                    PopulateLockedItems();
+                }
             }
         }
 
@@ -302,8 +349,13 @@ namespace FFLocker
 
         private void chkShowInfo_CheckedChanged(object? sender, EventArgs e)
         {
-            txtLog.Visible = chkShowInfo.Checked;
-            btnClearLog.Visible = chkShowInfo.Checked;
+            _settings.ShowInfo = chkShowInfo.Checked;
+            Program.SaveSettings(_settings);
+            if (chkShowInfo.Checked)
+            {
+                panelLockedItems.Visible = false;
+            }
+            UpdateUIVisibility();
         }
 
         private void btnClearLog_Click(object? sender, EventArgs e)
@@ -348,6 +400,61 @@ namespace FFLocker
                 chkContextMenu.Checked = _settings.ContextMenuEnabled;
                 chkContextMenu.CheckedChanged += chkContextMenu_CheckedChanged;
             }
+        }
+
+        private void btnShowLocked_Click(object? sender, EventArgs e)
+        {
+            panelLockedItems.Visible = !panelLockedItems.Visible;
+            if (panelLockedItems.Visible)
+            {
+                chkShowInfo.Checked = false;
+            }
+            UpdateUIVisibility();
+        }
+
+        private void PopulateLockedItems()
+        {
+            LockedItemsDatabase.Reload();
+            lstLockedItems.Items.Clear();
+            var lockedItems = LockedItemsDatabase.GetLockedItems();
+            bool showLockedName = cmbDisplayNameType.SelectedIndex == 1;
+
+            foreach (var item in lockedItems)
+            {
+                string typePrefix = item.IsFolder ? "[D] " : "[F] ";
+                string displayName = (showLockedName ? item.LockedPath : item.OriginalPath) ?? string.Empty;
+                lstLockedItems.Items.Add(typePrefix + displayName);
+            }
+        }
+        
+        private void cmbDisplayNameType_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (panelLockedItems.Visible)
+            {
+                PopulateLockedItems();
+            }
+        }
+
+        private void UpdateUIVisibility()
+        {
+            this.SuspendLayout();
+            
+            panelLog.Visible = chkShowInfo.Checked;
+            btnShowLocked.Text = panelLockedItems.Visible ? "Hide Locked Items" : "Show Locked Items";
+
+            if (panelLockedItems.Visible)
+            {
+                PopulateLockedItems();
+            }
+
+            int newHeight = _baseHeight;
+            if (panelLockedItems.Visible || panelLog.Visible)
+            {
+                newHeight += PanelHeight;
+            }
+            this.Height = newHeight;
+            
+            this.ResumeLayout();
         }
 
         private void SetMainUIEnabled(bool enabled)

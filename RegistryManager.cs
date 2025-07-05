@@ -74,25 +74,34 @@ namespace FFLocker
             {
                 if (rootKey == null) return;
 
+                // Create the main FFLocker menu item
                 using (var menuKey = rootKey.CreateSubKey(MenuName))
                 {
-                    menuKey.SetValue("SubCommands", "");
+                    menuKey.SetValue("MUIVerb", MenuName);
+                    menuKey.SetValue("Icon", $"\"{exePath}\"");
+                    menuKey.SetValue("SubCommands", ""); // Indicates a submenu
 
-                    using (var lockKey = menuKey.CreateSubKey("shell\01Lock"))
+                    // The container for the sub-commands
+                    using (var shellKey = menuKey.CreateSubKey("shell"))
                     {
-                        lockKey.SetValue("", "Lock");
-                        using (var commandKey = lockKey.CreateSubKey(CommandKey))
+                        // "Lock" sub-command
+                        using (var lockKey = shellKey.CreateSubKey("01Lock"))
                         {
-                            commandKey.SetValue("", $"\"{exePath}\" lock \"%1\"");
+                            lockKey.SetValue("MUIVerb", "Lock");
+                            using (var commandKey = lockKey.CreateSubKey(CommandKey))
+                            {
+                                commandKey.SetValue("", $"\"{exePath}\" lock \"%1\"");
+                            }
                         }
-                    }
 
-                    using (var unlockKey = menuKey.CreateSubKey("shell\02Unlock"))
-                    {
-                        unlockKey.SetValue("", "Unlock");
-                        using (var commandKey = unlockKey.CreateSubKey(CommandKey))
+                        // "Unlock" sub-command
+                        using (var unlockKey = shellKey.CreateSubKey("02Unlock"))
                         {
-                            commandKey.SetValue("", $"\"{exePath}\" unlock \"%1\"");
+                            unlockKey.SetValue("MUIVerb", "Unlock");
+                            using (var commandKey = unlockKey.CreateSubKey(CommandKey))
+                            {
+                                commandKey.SetValue("", $"\"{exePath}\" unlock \"%1\"");
+                            }
                         }
                     }
                 }
