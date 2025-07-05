@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
+using System.Windows.Forms;
 
 namespace FFLocker
 {
@@ -144,6 +145,48 @@ namespace FFLocker
             if (!_disposed)
             {
                 _disposed = true;
+            }
+        }
+    }
+    
+    class SecurePasswordReader
+    {
+        public static SecureBuffer ReadPassword()
+        {
+            var passwordChars = new List<char>();
+            
+            try
+            {
+                ConsoleKeyInfo key;
+                while ((key = Console.ReadKey(true)).Key != ConsoleKey.Enter)
+                {
+                    if (key.Key == ConsoleKey.Backspace && passwordChars.Count > 0)
+                    {
+                        passwordChars.RemoveAt(passwordChars.Count - 1);
+                        Console.Write("\b \b");
+                    }
+                    else if (key.KeyChar != '\0' && key.KeyChar != '\b')
+                    {
+                        passwordChars.Add(key.KeyChar);
+                        Console.Write("*");
+                    }
+                }
+                Console.WriteLine();
+
+                var passwordString = new string(passwordChars.ToArray());
+                var passwordBytes = Encoding.UTF8.GetBytes(passwordString);
+                
+                var secureBuffer = new SecureBuffer(passwordBytes.Length);
+                Array.Copy(passwordBytes, secureBuffer.Buffer, passwordBytes.Length);
+                
+                CryptographicOperations.ZeroMemory(passwordBytes);
+                passwordChars.Clear();
+                
+                return secureBuffer;
+            }
+            finally
+            {
+                passwordChars.Clear();
             }
         }
     }
@@ -310,6 +353,12 @@ namespace FFLocker
 
     class Program
     {
+        [DllImport("kernel32.dll")]
+        static extern bool AttachConsole(int dwProcessId);
+        [DllImport("kernel32.dll")]
+        static extern bool FreeConsole();
+        private const int ATTACH_PARENT_PROCESS = -1;
+
         private const int SALT_SIZE = 32;
         private const int NONCE_SIZE = 12;
         private const int TAG_SIZE = 16;
@@ -319,10 +368,71 @@ namespace FFLocker
         [STAThread]
         static void Main(string[] args)
         {
-            Application.SetHighDpiMode(HighDpiMode.SystemAware);
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm(LoadSettings()));
+            if (args.Length > 0)
+            {
+                AttachConsole(ATTACH_PARENT_PROCESS);
+                RunCli(args);
+                Console.WriteLine();
+                FreeConsole();
+            }
+            else
+            {
+                Application.SetHighDpiMode(HighDpiMode.SystemAware);
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new MainForm(LoadSettings()));
+            }
+        }
+
+        static void RunCli(string[] args)
+        {
+            if (args.Length < 2 || (args[0] != "lock" && args[0] != "unlock"))
+            {
+                Console.WriteLine("Usage: FFLocker lock|unlock <path>");
+                return;
+            }
+
+            string cmd = args[0];
+            string path = args[1];
+
+            if (!File.Exists(path) && !Directory.Exists(path))
+            {
+                Console.WriteLine("Error: File or folder not found.");
+                return;
+            }
+
+            Console.Write("Password: ");
+            using var password = SecurePasswordReader.ReadPassword();
+
+            var progress = new Progress<int>(p => Console.Write($"\rProgress: {p}%"));
+            var logger = new Progress<string>(m => Console.WriteLine(m));
+
+            try
+            {
+                if (cmd == "lock")
+                {
+                    if (DualMetadataManager.IsLocked(path))
+                    {
+                        ((IProgress<string>)logger).Report("The file or folder is already locked.");
+                        return;
+                    }
+                    Lock(path, password, progress, logger);
+                }
+                else
+                {
+                    if (!DualMetadataManager.IsLocked(path))
+                    {
+                        ((IProgress<string>)logger).Report("The file or folder is not locked.");
+                        return;
+                    }
+                    Unlock(path, password, progress, logger);
+                }
+                ((IProgress<string>)logger).Report("Operation completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                ((IProgress<string>)logger).Report($"An error occurred: {ex.Message}");
+            }
         }
 
         public static AppSettings LoadSettings()
@@ -403,7 +513,6 @@ namespace FFLocker
                 
                 var percentage = (int)((double)processed / fileInfos.Count * 100);
                 progress.Report(percentage);
-                logger.Report($"Progress: {percentage}% ({processed}/{fileInfos.Count})");
             });
 
             var dirMappings = new List<FileMapping>();
@@ -479,7 +588,6 @@ namespace FFLocker
                 var processed = Interlocked.Increment(ref processedFiles);
                 var percentage = (int)((double)processed / metadata.Files.Count * 100);
                 progress.Report(percentage);
-                logger.Report($"Progress: {percentage}% ({processed}/{metadata.Files.Count})");
             });
 
             DualMetadataManager.CleanupContainers(root, logger);

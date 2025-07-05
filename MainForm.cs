@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -8,281 +9,159 @@ namespace FFLocker
 {
     public partial class MainForm : Form
     {
-        private enum Operation
+        #region UI Theming
+        private static class Theme
         {
-            None,
-            Lock,
-            Unlock
-        }
+            public static class Dark
+            {
+                public static Color Back = Color.FromArgb(37, 37, 38);
+                public static Color Fore = Color.FromArgb(241, 241, 241);
+                public static Color ControlBack = Color.FromArgb(63, 63, 70);
+                public static Color ControlHover = Color.FromArgb(80, 80, 85);
+                public static Color Accent = Color.FromArgb(0, 122, 204);
+            }
 
+            public static class Light
+            {
+                public static Color Back = SystemColors.Control;
+                public static Color Fore = SystemColors.ControlText;
+                public static Color ControlBack = SystemColors.Window;
+                public static Color ControlHover = Color.FromArgb(229, 241, 251);
+                public static Color Accent = Color.FromArgb(0, 122, 204);
+            }
+        }
+        #endregion
+
+        private enum Operation { None, Lock, Unlock }
         private Operation _currentOperation = Operation.None;
         private AppSettings _settings;
+        private ToolTip _toolTip = new ToolTip();
 
         public MainForm(AppSettings settings)
         {
             _settings = settings;
             InitializeComponent();
             ApplyTheme();
+            LoadWindowPosition();
+            InitializeToolTips();
+
+            // Unsubscribe from the event before setting the initial state
+            chkContextMenu.CheckedChanged -= chkContextMenu_CheckedChanged;
+            chkContextMenu.Checked = RegistryManager.IsContextMenuEnabled();
+            // Subscribe back to the event
+            chkContextMenu.CheckedChanged += chkContextMenu_CheckedChanged;
         }
 
-        private void InitializeComponent()
+        private void InitializeToolTips()
         {
-            this.txtPath = new System.Windows.Forms.TextBox();
-            this.btnBrowse = new System.Windows.Forms.Button();
-            this.rbFile = new System.Windows.Forms.RadioButton();
-            this.rbFolder = new System.Windows.Forms.RadioButton();
-            this.btnLock = new System.Windows.Forms.Button();
-            this.btnUnlock = new System.Windows.Forms.Button();
-            this.panelPassword = new System.Windows.Forms.Panel();
-            this.btnCancel = new System.Windows.Forms.Button();
-            this.btnConfirm = new System.Windows.Forms.Button();
-            this.txtPassword = new System.Windows.Forms.TextBox();
-            this.lblPassword = new System.Windows.Forms.Label();
-            this.progressBar = new System.Windows.Forms.ProgressBar();
-            this.lblStatus = new System.Windows.Forms.Label();
-            this.chkShowInfo = new System.Windows.Forms.CheckBox();
-            this.txtLog = new System.Windows.Forms.TextBox();
-            this.btnClearLog = new System.Windows.Forms.Button();
-            this.chkDarkMode = new System.Windows.Forms.CheckBox();
-            this.panelPassword.SuspendLayout();
-            this.SuspendLayout();
-            // 
-            // txtPath
-            // 
-            this.txtPath.Location = new System.Drawing.Point(12, 12);
-            this.txtPath.Name = "txtPath";
-            this.txtPath.Size = new System.Drawing.Size(399, 23);
-            this.txtPath.TabIndex = 0;
-            // 
-            // btnBrowse
-            // 
-            this.btnBrowse.Location = new System.Drawing.Point(417, 12);
-            this.btnBrowse.Name = "btnBrowse";
-            this.btnBrowse.Size = new System.Drawing.Size(75, 23);
-            this.btnBrowse.TabIndex = 1;
-            this.btnBrowse.Text = "Browse...";
-            this.btnBrowse.UseVisualStyleBackColor = true;
-            this.btnBrowse.Click += new System.EventHandler(this.btnBrowse_Click);
-            // 
-            // rbFile
-            // 
-            this.rbFile.AutoSize = true;
-            this.rbFile.Checked = true;
-            this.rbFile.Location = new System.Drawing.Point(12, 41);
-            this.rbFile.Name = "rbFile";
-            this.rbFile.Size = new System.Drawing.Size(84, 19);
-            this.rbFile.TabIndex = 2;
-            this.rbFile.TabStop = true;
-            this.rbFile.Text = "Select File";
-            this.rbFile.UseVisualStyleBackColor = true;
-            // 
-            // rbFolder
-            // 
-            this.rbFolder.AutoSize = true;
-            this.rbFolder.Location = new System.Drawing.Point(102, 41);
-            this.rbFolder.Name = "rbFolder";
-            this.rbFolder.Size = new System.Drawing.Size(98, 19);
-            this.rbFolder.TabIndex = 3;
-            this.rbFolder.Text = "Select Folder";
-            this.rbFolder.UseVisualStyleBackColor = true;
-            // 
-            // btnLock
-            // 
-            this.btnLock.Location = new System.Drawing.Point(12, 66);
-            this.btnLock.Name = "btnLock";
-            this.btnLock.Size = new System.Drawing.Size(237, 23);
-            this.btnLock.TabIndex = 4;
-            this.btnLock.Text = "Lock";
-            this.btnLock.UseVisualStyleBackColor = true;
-            this.btnLock.Click += new System.EventHandler(this.btnLock_Click);
-            // 
-            // btnUnlock
-            // 
-            this.btnUnlock.Location = new System.Drawing.Point(255, 66);
-            this.btnUnlock.Name = "btnUnlock";
-            this.btnUnlock.Size = new System.Drawing.Size(237, 23);
-            this.btnUnlock.TabIndex = 5;
-            this.btnUnlock.Text = "Unlock";
-            this.btnUnlock.UseVisualStyleBackColor = true;
-            this.btnUnlock.Click += new System.EventHandler(this.btnUnlock_Click);
-            // 
-            // panelPassword
-            // 
-            this.panelPassword.Controls.Add(this.btnCancel);
-            this.panelPassword.Controls.Add(this.btnConfirm);
-            this.panelPassword.Controls.Add(this.txtPassword);
-            this.panelPassword.Controls.Add(this.lblPassword);
-            this.panelPassword.Location = new System.Drawing.Point(12, 95);
-            this.panelPassword.Name = "panelPassword";
-            this.panelPassword.Size = new System.Drawing.Size(480, 40);
-            this.panelPassword.TabIndex = 6;
-            this.panelPassword.Visible = false;
-            // 
-            // btnCancel
-            // 
-            this.btnCancel.Location = new System.Drawing.Point(399, 8);
-            this.btnCancel.Name = "btnCancel";
-            this.btnCancel.Size = new System.Drawing.Size(75, 23);
-            this.btnCancel.TabIndex = 3;
-            this.btnCancel.Text = "Cancel";
-            this.btnCancel.UseVisualStyleBackColor = true;
-            this.btnCancel.Click += new System.EventHandler(this.btnCancel_Click);
-            // 
-            // btnConfirm
-            // 
-            this.btnConfirm.Location = new System.Drawing.Point(318, 8);
-            this.btnConfirm.Name = "btnConfirm";
-            this.btnConfirm.Size = new System.Drawing.Size(75, 23);
-            this.btnConfirm.TabIndex = 2;
-            this.btnConfirm.Text = "Confirm";
-            this.btnConfirm.UseVisualStyleBackColor = true;
-            this.btnConfirm.Click += new System.EventHandler(this.btnConfirm_Click);
-            // 
-            // txtPassword
-            // 
-            this.txtPassword.Location = new System.Drawing.Point(65, 8);
-            this.txtPassword.Name = "txtPassword";
-            this.txtPassword.Size = new System.Drawing.Size(247, 23);
-            this.txtPassword.TabIndex = 1;
-            this.txtPassword.UseSystemPasswordChar = true;
-            this.txtPassword.KeyDown += new System.Windows.Forms.KeyEventHandler(this.txtPassword_KeyDown);
-            // 
-            // lblPassword
-            // 
-            this.lblPassword.AutoSize = true;
-            this.lblPassword.Location = new System.Drawing.Point(3, 11);
-            this.lblPassword.Name = "lblPassword";
-            this.lblPassword.Size = new System.Drawing.Size(60, 15);
-            this.lblPassword.TabIndex = 0;
-            this.lblPassword.Text = "Password:";
-            // 
-            // progressBar
-            // 
-            this.progressBar.Location = new System.Drawing.Point(12, 141);
-            this.progressBar.Name = "progressBar";
-            this.progressBar.Size = new System.Drawing.Size(480, 23);
-            this.progressBar.TabIndex = 7;
-            // 
-            // lblStatus
-            // 
-            this.lblStatus.AutoSize = true;
-            this.lblStatus.Location = new System.Drawing.Point(12, 167);
-            this.lblStatus.Name = "lblStatus";
-            this.lblStatus.Size = new System.Drawing.Size(39, 15);
-            this.lblStatus.TabIndex = 8;
-            this.lblStatus.Text = "Ready";
-            // 
-            // chkShowInfo
-            // 
-            this.chkShowInfo.AutoSize = true;
-            this.chkShowInfo.Location = new System.Drawing.Point(12, 185);
-            this.chkShowInfo.Name = "chkShowInfo";
-            this.chkShowInfo.Size = new System.Drawing.Size(107, 19);
-            this.chkShowInfo.TabIndex = 9;
-            this.chkShowInfo.Text = "Show more info";
-            this.chkShowInfo.UseVisualStyleBackColor = true;
-            this.chkShowInfo.CheckedChanged += new System.EventHandler(this.chkShowInfo_CheckedChanged);
-            // 
-            // txtLog
-            // 
-            this.txtLog.Location = new System.Drawing.Point(12, 210);
-            this.txtLog.Multiline = true;
-            this.txtLog.Name = "txtLog";
-            this.txtLog.ReadOnly = true;
-            this.txtLog.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-            this.txtLog.Size = new System.Drawing.Size(480, 150);
-            this.txtLog.TabIndex = 10;
-            this.txtLog.Visible = false;
-            // 
-            // btnClearLog
-            // 
-            this.btnClearLog.Location = new System.Drawing.Point(125, 181);
-            this.btnClearLog.Name = "btnClearLog";
-            this.btnClearLog.Size = new System.Drawing.Size(75, 23);
-            this.btnClearLog.TabIndex = 11;
-            this.btnClearLog.Text = "Clear";
-            this.btnClearLog.UseVisualStyleBackColor = true;
-            this.btnClearLog.Visible = false;
-            this.btnClearLog.Click += new System.EventHandler(this.btnClearLog_Click);
-            // 
-            // chkDarkMode
-            // 
-            this.chkDarkMode.AutoSize = true;
-            this.chkDarkMode.Location = new System.Drawing.Point(403, 185);
-            this.chkDarkMode.Name = "chkDarkMode";
-            this.chkDarkMode.Size = new System.Drawing.Size(89, 19);
-            this.chkDarkMode.TabIndex = 12;
-            this.chkDarkMode.Text = "Dark Mode";
-            this.chkDarkMode.UseVisualStyleBackColor = true;
-            this.chkDarkMode.CheckedChanged += new System.EventHandler(this.chkDarkMode_CheckedChanged);
-            // 
-            // MainForm
-            // 
-            this.ClientSize = new System.Drawing.Size(504, 371);
-            this.Controls.Add(this.chkDarkMode);
-            this.Controls.Add(this.btnClearLog);
-            this.Controls.Add(this.txtLog);
-            this.Controls.Add(this.chkShowInfo);
-            this.Controls.Add(this.lblStatus);
-            this.Controls.Add(this.progressBar);
-            this.Controls.Add(this.panelPassword);
-            this.Controls.Add(this.btnUnlock);
-            this.Controls.Add(this.btnLock);
-            this.Controls.Add(this.rbFolder);
-            this.Controls.Add(this.rbFile);
-            this.Controls.Add(this.btnBrowse);
-            this.Controls.Add(this.txtPath);
-            this.Name = "MainForm";
-            this.Text = "FFLocker";
-            this.panelPassword.ResumeLayout(false);
-            this.panelPassword.PerformLayout();
-            this.ResumeLayout(false);
-            this.PerformLayout();
-        }
+            _toolTip.SetToolTip(chkShowInfo, "Show detailed logs of the application's operations.");
+            _toolTip.SetToolTip(chkDarkMode, "Toggle between light and dark themes.");
 
-        private System.Windows.Forms.TextBox txtPath = null!;
-        private System.Windows.Forms.Button btnBrowse = null!;
-        private System.Windows.Forms.RadioButton rbFile = null!;
-        private System.Windows.Forms.RadioButton rbFolder = null!;
-        private System.Windows.Forms.Button btnLock = null!;
-        private System.Windows.Forms.Button btnUnlock = null!;
-        private System.Windows.Forms.Panel panelPassword = null!;
-        private System.Windows.Forms.Button btnCancel = null!;
-        private System.Windows.Forms.Button btnConfirm = null!;
-        private System.Windows.Forms.TextBox txtPassword = null!;
-        private System.Windows.Forms.Label lblPassword = null!;
-        private System.Windows.Forms.ProgressBar progressBar = null!;
-        private System.Windows.Forms.Label lblStatus = null!;
-        private System.Windows.Forms.CheckBox chkShowInfo = null!;
-        private System.Windows.Forms.TextBox txtLog = null!;
-        private System.Windows.Forms.Button btnClearLog = null!;
-        private System.Windows.Forms.CheckBox chkDarkMode = null!;
+            if (!RegistryManager.IsAdmin())
+            {
+                _toolTip.SetToolTip(chkContextMenu, "Run as administrator to enable/disable the context menu.");
+            }
+            else
+            {
+                _toolTip.SetToolTip(chkContextMenu, "Enable/disable the FFLocker context menu in Windows Explorer.");
+            }
+        }
 
         private void ApplyTheme()
         {
             chkDarkMode.Checked = _settings.DarkMode;
-            var foreColor = _settings.DarkMode ? Color.White : SystemColors.ControlText;
-            var backColor = _settings.DarkMode ? Color.FromArgb(45, 45, 48) : SystemColors.Control;
 
-            this.ForeColor = foreColor;
+            Color backColor, foreColor, controlBackColor, controlForeColor;
+
+            if (_settings.DarkMode)
+            {
+                backColor = Theme.Dark.Back;
+                foreColor = Theme.Dark.Fore;
+                controlBackColor = Theme.Dark.ControlBack;
+                controlForeColor = Theme.Dark.Fore;
+            }
+            else
+            {
+                backColor = Theme.Light.Back;
+                foreColor = Theme.Light.Fore;
+                controlBackColor = Theme.Light.ControlBack;
+                controlForeColor = Theme.Light.Fore;
+            }
+
             this.BackColor = backColor;
+            this.ForeColor = foreColor;
 
             foreach (Control c in this.Controls)
             {
-                UpdateColor(c, foreColor, backColor);
+                UpdateColor(c, foreColor, backColor, controlBackColor, controlForeColor);
             }
         }
 
-        private void UpdateColor(Control c, Color foreColor, Color backColor)
+        private void UpdateColor(Control c, Color foreColor, Color backColor, Color controlBackColor, Color controlForeColor)
         {
             c.ForeColor = foreColor;
             c.BackColor = backColor;
+
+            if (c is TextBox || c is Button || c is CheckBox || c is RadioButton)
+            {
+                c.BackColor = controlBackColor;
+                c.ForeColor = controlForeColor;
+            }
+
             foreach (Control child in c.Controls)
             {
-                UpdateColor(child, foreColor, backColor);
+                UpdateColor(child, foreColor, backColor, controlBackColor, controlForeColor);
             }
         }
 
+        #region Window Position Handling
+        private void LoadWindowPosition()
+        {
+            if (_settings.WindowSize != Size.Empty)
+            {
+                bool isOnScreen = false;
+                foreach (Screen screen in Screen.AllScreens)
+                {
+                    if (screen.WorkingArea.IntersectsWith(new Rectangle(_settings.WindowLocation, _settings.WindowSize)))
+                    {
+                        isOnScreen = true;
+                        break;
+                    }
+                }
+
+                if (isOnScreen)
+                {
+                    this.StartPosition = FormStartPosition.Manual;
+                    this.Location = _settings.WindowLocation;
+                    this.Size = _settings.WindowSize;
+                    this.WindowState = _settings.WindowMaximized ? FormWindowState.Maximized : FormWindowState.Normal;
+                }
+            }
+        }
+
+        private void SaveWindowPosition()
+        {
+            _settings.WindowMaximized = this.WindowState == FormWindowState.Maximized;
+            if (this.WindowState == FormWindowState.Normal)
+            {
+                _settings.WindowLocation = this.Location;
+                _settings.WindowSize = this.Size;
+            }
+            else
+            {
+                _settings.WindowLocation = this.RestoreBounds.Location;
+                _settings.WindowSize = this.RestoreBounds.Size;
+            }
+            Program.SaveSettings(_settings);
+        }
+
+        private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
+        {
+            SaveWindowPosition();
+        }
+        #endregion
+
+        #region UI Event Handlers
         private void btnBrowse_Click(object? sender, EventArgs e)
         {
             if (rbFile.Checked)
@@ -397,7 +276,7 @@ namespace FFLocker
                     lblStatus.Text = "Unlock operation completed successfully!";
                 }
                 
-                txtPath.Text = ""; // Clear selection on success
+                txtPath.Text = "";
             }
             catch (Exception ex)
             {
@@ -416,7 +295,7 @@ namespace FFLocker
         {
             if (e.KeyCode == Keys.Enter)
             {
-                e.SuppressKeyPress = true; // Prevents the 'ding' sound
+                e.SuppressKeyPress = true;
                 btnConfirm.PerformClick();
             }
         }
@@ -439,6 +318,38 @@ namespace FFLocker
             ApplyTheme();
         }
 
+        private void chkContextMenu_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (!RegistryManager.IsAdmin())
+            {
+                MessageBox.Show("This feature requires administrator privileges. Please restart FFLocker as an administrator.", "Administrator Privileges Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                // Unsubscribe, change, and re-subscribe to prevent the event from firing again
+                chkContextMenu.CheckedChanged -= chkContextMenu_CheckedChanged;
+                chkContextMenu.Checked = false;
+                chkContextMenu.CheckedChanged += chkContextMenu_CheckedChanged;
+                return;
+            }
+
+            if (chkContextMenu.Checked)
+            {
+                RegistryManager.AddContextMenu();
+            }
+            else
+            {
+                RegistryManager.RemoveContextMenu();
+            }
+            _settings.ContextMenuEnabled = RegistryManager.IsContextMenuEnabled();
+            Program.SaveSettings(_settings);
+
+            // If the operation failed, revert the checkbox state
+            if (chkContextMenu.Checked != _settings.ContextMenuEnabled)
+            {
+                chkContextMenu.CheckedChanged -= chkContextMenu_CheckedChanged;
+                chkContextMenu.Checked = _settings.ContextMenuEnabled;
+                chkContextMenu.CheckedChanged += chkContextMenu_CheckedChanged;
+            }
+        }
+
         private void SetMainUIEnabled(bool enabled)
         {
             txtPath.Enabled = enabled;
@@ -451,8 +362,8 @@ namespace FFLocker
         
         private void SetOperationUIEnabled(bool enabled)
         {
-            // This is to re-enable the main UI after an operation
             SetMainUIEnabled(enabled);
         }
+        #endregion
     }
 }
