@@ -64,7 +64,12 @@ namespace FFLocker
 
                 lblStatus.Text = "Operation completed successfully!";
                 progressBar.Value = 100;
-                MessageBox.Show("Operation completed successfully.\n\nYou can view all locked items in the main FFLocker application.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                string successMessage = _operation == "lock"
+                    ? "Operation completed successfully.\n\nYou can view all locked items in the main FFLocker application."
+                    : "Operation completed successfully.";
+
+                MessageBox.Show(successMessage, "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 this.Close();
             }
             catch (Exception ex)

@@ -443,7 +443,7 @@ namespace FFLocker
                 .Where(f => f.Size > 0).ToList();
 
             var totalBytes = fileInfos.Sum(f => f.Size);
-            logger.Report($"Encrypting {fileInfos.Count} files ({FormatSize(totalBytes)})");
+            logger.Report($"Found {fileInfos.Count} files to encrypt, total size: {FormatSize(totalBytes)}.");
 
             var fileMappings = new ConcurrentBag<FileMapping>();
             var processedFiles = 0;
@@ -451,18 +451,22 @@ namespace FFLocker
 
             var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism };
 
+            logger.Report($"Starting encryption with up to {Config.MaxParallelism} parallel tasks...");
+
             Parallel.ForEach(fileInfos, parallelOptions, fileInfo =>
             {
                 var mapping = EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, crypto, logger);
                 fileMappings.Add(mapping);
                 
                 var processed = Interlocked.Increment(ref processedFiles);
-                Interlocked.Add(ref processedBytes, fileInfo.Size);
+                var currentBytes = Interlocked.Add(ref processedBytes, fileInfo.Size);
                 
                 var percentage = (int)((double)processed / fileInfos.Count * 100);
                 progress.Report(percentage);
+                logger.Report($"Encrypted: {fileInfo.RelPath} ({FormatSize(fileInfo.Size)}) - Progress: {processed}/{fileInfos.Count}");
             });
 
+            logger.Report("All files encrypted. Renaming directories...");
             var dirMappings = new List<FileMapping>();
             var dirRelPaths = Directory.GetDirectories(root, "*", SearchOption.AllDirectories)
                 .Select(d => Path.GetRelativePath(root, d)).OrderByDescending(r => r.Length).ToList();
@@ -526,23 +530,27 @@ namespace FFLocker
                     Directory.Move(obfFull, realFull);
             }
 
-            logger.Report($"Decrypting {metadata.Files.Count} files...");
+            logger.Report($"Decrypting {metadata.Files.Count} files with up to {Config.MaxParallelism} parallel tasks...");
             var processedFiles = 0;
 
             Parallel.ForEach(metadata.Files, new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism }, fileEntry =>
             {
+                logger.Report($"Decrypting: {fileEntry.Real}");
                 DecryptFile(root, fileEntry, masterKeyBuffer.Buffer, logger);
                 
                 var processed = Interlocked.Increment(ref processedFiles);
                 var percentage = (int)((double)processed / metadata.Files.Count * 100);
                 progress.Report(percentage);
+                logger.Report($"Decrypted: {fileEntry.Real} - Progress: {processed}/{metadata.Files.Count}");
             });
 
+            logger.Report("All files decrypted. Cleaning up metadata containers...");
             DualMetadataManager.CleanupContainers(root, logger);
             LockedItemsDatabase.Remove(root);
 
             sw.Stop();
-            logger.Report($"Folder unlocked in {sw.Elapsed.TotalSeconds:F2}s");
+            var decryptionRate = metadata.Files.Sum(f => new FileInfo(Path.Combine(root, f.Real)).Length) / (1024 * 1024.0) / sw.Elapsed.TotalSeconds;
+            logger.Report($"Folder unlocked in {sw.Elapsed.TotalSeconds:F2}s - Rate: {decryptionRate:F1} MB/s");
         }
 
         public static string LockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
@@ -563,7 +571,7 @@ namespace FFLocker
             Array.Copy(derivedKey, masterKeyBuffer.Buffer, 32);
             CryptographicOperations.ZeroMemory(derivedKey);
 
-            logger.Report($"Encrypting file...");
+            logger.Report($"Encrypting file: {relPath} ({FormatSize(new FileInfo(filePath).Length)})");
             var mapping = EncryptFile(root, relPath, masterKeyBuffer.Buffer, crypto, logger);
             progress.Report(100);
 
@@ -575,10 +583,12 @@ namespace FFLocker
                 Checksum = ComputeMetadataChecksum(new List<FileMapping> { mapping }, new List<FileMapping>())
             };
 
+            logger.Report("Saving metadata...");
             DualMetadataManager.SaveMetadata(root, metadata, masterKeyBuffer.Buffer, crypto, logger);
 
             sw.Stop();
-            logger.Report($"File secured in {sw.Elapsed.TotalSeconds:F2}s");
+            var encryptionRate = new FileInfo(Path.Combine(root, mapping.Obf)).Length / (1024 * 1024.0) / sw.Elapsed.TotalSeconds;
+            logger.Report($"File secured in {sw.Elapsed.TotalSeconds:F2}s - Rate: {encryptionRate:F1} MB/s");
             
             return Path.Combine(root, mapping.Obf);
         }
@@ -608,15 +618,17 @@ namespace FFLocker
                 throw new Exception("File not found in metadata.");
             }
 
-            logger.Report($"Decrypting file...");
+            logger.Report($"Decrypting file: {fileEntry.Real}");
             DecryptFile(root, fileEntry, masterKeyBuffer.Buffer, logger);
             progress.Report(100);
 
+            logger.Report("Cleaning up metadata containers...");
             DualMetadataManager.CleanupContainers(root, logger);
             LockedItemsDatabase.Remove(Path.Combine(root, fileEntry.Real));
 
             sw.Stop();
-            logger.Report($"File unlocked in {sw.Elapsed.TotalSeconds:F2}s");
+            var decryptionRate = new FileInfo(Path.Combine(root, fileEntry.Real)).Length / (1024 * 1024.0) / sw.Elapsed.TotalSeconds;
+            logger.Report($"File unlocked in {sw.Elapsed.TotalSeconds:F2}s - Rate: {decryptionRate:F1} MB/s");
         }
 
         static FileMapping EncryptFile(string root, string relPath, byte[] masterKey, SecureCrypto crypto, IProgress<string> logger)
@@ -632,8 +644,13 @@ namespace FFLocker
             
             try
             {
+                logger.Report($" -> Deriving key for {relPath}");
                 DeriveFileKey(masterKey, relPath, fileSalt, fileKeyBuffer.Buffer);
+                
+                logger.Report($" -> Encrypting stream for {relPath}");
                 EncryptFileStream(inputPath, tempPath, fileKeyBuffer.Buffer, crypto);
+                
+                logger.Report($" -> Finalizing {relPath}");
                 File.Move(tempPath, outputPath);
                 SecureDeleteFile(inputPath);
                 
@@ -661,15 +678,20 @@ namespace FFLocker
             
             try
             {
+                logger.Report($" -> Deriving key for {entry.Real}");
                 DeriveFileKey(masterKey, entry.Real, entry.FileSalt, fileKeyBuffer.Buffer);
                 
                 var expectedHash = ComputeHash(entry.Real, entry.Obf);
                 if (expectedHash != entry.Hash)
                 {
+                    logger.Report($"[ERROR] Integrity check failed for {entry.Real}. Expected hash {expectedHash}, but got {entry.Hash}.");
                     throw new InvalidDataException($"Integrity verification failed for {entry.Real}");
                 }
                 
+                logger.Report($" -> Decrypting stream for {entry.Real}");
                 DecryptFileStream(encPath, tempPath, fileKeyBuffer.Buffer);
+
+                logger.Report($" -> Finalizing {entry.Real}");
                 File.Move(tempPath, realPath);
                 SecureDeleteFile(encPath);
             }

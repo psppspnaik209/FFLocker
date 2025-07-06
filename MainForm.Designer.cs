@@ -42,6 +42,7 @@ namespace FFLocker
             this.btnShowLocked = new System.Windows.Forms.Button();
             this.chkContextMenu = new System.Windows.Forms.CheckBox();
             this.chkDarkMode = new System.Windows.Forms.CheckBox();
+            this.btnAbout = new System.Windows.Forms.Button();
             this.panelMain.SuspendLayout();
             this.panelPassword.SuspendLayout();
             this.panelLockedItems.SuspendLayout();
@@ -174,6 +175,7 @@ namespace FFLocker
             this.txtPassword.Size = new System.Drawing.Size(327, 23);
             this.txtPassword.TabIndex = 1;
             this.txtPassword.UseSystemPasswordChar = true;
+            this.txtPassword.KeyDown += new System.Windows.Forms.KeyEventHandler(this.txtPassword_KeyDown);
             // 
             // lblPassword
             // 
@@ -267,33 +269,34 @@ namespace FFLocker
             this.txtLog.Size = new System.Drawing.Size(558, 103);
             this.txtLog.TabIndex = 10;
             // 
-            // flowLayoutPanelControls
+            // tableLayoutPanelControls
             // 
             this.flowLayoutPanelControls.Controls.Add(this.lblStatus);
             this.flowLayoutPanelControls.Controls.Add(this.chkShowInfo);
             this.flowLayoutPanelControls.Controls.Add(this.btnShowLocked);
             this.flowLayoutPanelControls.Controls.Add(this.chkContextMenu);
             this.flowLayoutPanelControls.Controls.Add(this.chkDarkMode);
+            this.flowLayoutPanelControls.Controls.Add(this.btnAbout);
             this.flowLayoutPanelControls.Dock = System.Windows.Forms.DockStyle.Bottom;
-            this.flowLayoutPanelControls.Location = new System.Drawing.Point(0, 503);
+            this.flowLayoutPanelControls.Location = new System.Drawing.Point(0, 223);
             this.flowLayoutPanelControls.Name = "flowLayoutPanelControls";
             this.flowLayoutPanelControls.Padding = new System.Windows.Forms.Padding(9);
-            this.flowLayoutPanelControls.Size = new System.Drawing.Size(584, 58);
+            this.flowLayoutPanelControls.Size = new System.Drawing.Size(584, 38);
             this.flowLayoutPanelControls.TabIndex = 3;
             // 
             // lblStatus
             // 
-            this.lblStatus.AutoSize = true;
             this.lblStatus.Location = new System.Drawing.Point(12, 12);
             this.lblStatus.Name = "lblStatus";
-            this.lblStatus.Size = new System.Drawing.Size(39, 15);
+            this.lblStatus.Size = new System.Drawing.Size(150, 23);
             this.lblStatus.TabIndex = 8;
             this.lblStatus.Text = "Ready";
+            this.lblStatus.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             // 
             // chkShowInfo
             // 
             this.chkShowInfo.AutoSize = true;
-            this.chkShowInfo.Location = new System.Drawing.Point(57, 12);
+            this.chkShowInfo.Location = new System.Drawing.Point(168, 12);
             this.chkShowInfo.Name = "chkShowInfo";
             this.chkShowInfo.Size = new System.Drawing.Size(107, 19);
             this.chkShowInfo.TabIndex = 9;
@@ -303,7 +306,7 @@ namespace FFLocker
             // 
             // btnShowLocked
             // 
-            this.btnShowLocked.Location = new System.Drawing.Point(170, 12);
+            this.btnShowLocked.Location = new System.Drawing.Point(281, 12);
             this.btnShowLocked.Name = "btnShowLocked";
             this.btnShowLocked.Size = new System.Drawing.Size(120, 23);
             this.btnShowLocked.TabIndex = 14;
@@ -315,7 +318,7 @@ namespace FFLocker
             // 
             this.chkContextMenu.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.chkContextMenu.AutoSize = true;
-            this.chkContextMenu.Location = new System.Drawing.Point(296, 12);
+            this.chkContextMenu.Location = new System.Drawing.Point(407, 12);
             this.chkContextMenu.Name = "chkContextMenu";
             this.chkContextMenu.Size = new System.Drawing.Size(117, 19);
             this.chkContextMenu.TabIndex = 13;
@@ -326,7 +329,7 @@ namespace FFLocker
             // 
             this.chkDarkMode.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.chkDarkMode.AutoSize = true;
-            this.chkDarkMode.Location = new System.Drawing.Point(419, 12);
+            this.chkDarkMode.Location = new System.Drawing.Point(530, 12);
             this.chkDarkMode.Name = "chkDarkMode";
             this.chkDarkMode.Size = new System.Drawing.Size(89, 19);
             this.chkDarkMode.TabIndex = 12;
@@ -334,16 +337,27 @@ namespace FFLocker
             this.chkDarkMode.UseVisualStyleBackColor = true;
             this.chkDarkMode.CheckedChanged += new System.EventHandler(this.chkDarkMode_CheckedChanged);
             // 
+            // btnAbout
+            // 
+            this.btnAbout.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnAbout.Location = new System.Drawing.Point(625, 12);
+            this.btnAbout.Name = "btnAbout";
+            this.btnAbout.Size = new System.Drawing.Size(58, 23);
+            this.btnAbout.TabIndex = 15;
+            this.btnAbout.Text = "About";
+            this.btnAbout.UseVisualStyleBackColor = true;
+            this.btnAbout.Click += new System.EventHandler(this.btnAbout_Click);
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(584, 561);
+            this.ClientSize = new System.Drawing.Size(700, 561);
             this.Controls.Add(this.flowLayoutPanelControls);
             this.Controls.Add(this.panelLog);
             this.Controls.Add(this.panelLockedItems);
             this.Controls.Add(this.panelMain);
-            this.MinimumSize = new System.Drawing.Size(600, 320);
+            this.MinimumSize = new System.Drawing.Size(700, 300);
             this.Name = "MainForm";
             this.Text = "FFLocker";
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.MainForm_FormClosing);
@@ -387,5 +401,6 @@ namespace FFLocker
         private System.Windows.Forms.Button btnShowLocked;
         private System.Windows.Forms.CheckBox chkContextMenu;
         private System.Windows.Forms.CheckBox chkDarkMode;
+        private System.Windows.Forms.Button btnAbout;
     }
 }

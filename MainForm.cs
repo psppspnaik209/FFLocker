@@ -36,8 +36,7 @@ namespace FFLocker
         private Operation _currentOperation = Operation.None;
         private AppSettings _settings;
         private ToolTip _toolTip = new ToolTip();
-        private int _baseHeight;
-        private const int PanelHeight = 150;
+        private const int PanelHeight = 180;
 
         public MainForm(AppSettings settings)
         {
@@ -61,15 +60,14 @@ namespace FFLocker
             chkContextMenu.CheckedChanged += chkContextMenu_CheckedChanged;
 
             chkShowInfo.CheckedChanged -= chkShowInfo_CheckedChanged;
-            chkShowInfo.Checked = _settings.ShowInfo;
+            chkShowInfo.Checked = false;
             chkShowInfo.CheckedChanged += chkShowInfo_CheckedChanged;
 
             cmbDisplayNameType.SelectedIndex = 0;
             
-            _baseHeight = panelMain.Height + flowLayoutPanelControls.Height + 40;
-            this.Height = _baseHeight;
-
             UpdateUIVisibility();
+            
+            this.txtPassword.KeyDown += new System.Windows.Forms.KeyEventHandler(this.txtPassword_KeyDown);
         }
 
         private void InitializeToolTips()
@@ -293,11 +291,17 @@ namespace FFLocker
                 if (chkShowInfo.Checked) {
                     if (this.InvokeRequired)
                     {
-                        this.Invoke(new Action(() => txtLog.AppendText(m + Environment.NewLine)));
+                        this.Invoke(new Action(() => {
+                            txtLog.AppendText(m + Environment.NewLine);
+                            txtLog.SelectionStart = txtLog.Text.Length;
+                            txtLog.ScrollToCaret();
+                        }));
                     }
                     else
                     {
                         txtLog.AppendText(m + Environment.NewLine);
+                        txtLog.SelectionStart = txtLog.Text.Length;
+                        txtLog.ScrollToCaret();
                     }
                 }
             });
@@ -310,12 +314,12 @@ namespace FFLocker
                 if (_currentOperation == Operation.Lock)
                 {
                     await Task.Run(() => Program.Lock(path, passwordBuffer, progress, (IProgress<string>)logger));
-                    lblStatus.Text = "Lock operation completed successfully!";
+                    lblStatus.Text = "Lock successful!";
                 }
                 else if (_currentOperation == Operation.Unlock)
                 {
                     await Task.Run(() => Program.Unlock(path, passwordBuffer, progress, (IProgress<string>)logger));
-                    lblStatus.Text = "Unlock operation completed successfully!";
+                    lblStatus.Text = "Unlock successful!";
                 }
                 
                 txtPath.Text = "";
@@ -349,8 +353,6 @@ namespace FFLocker
 
         private void chkShowInfo_CheckedChanged(object? sender, EventArgs e)
         {
-            _settings.ShowInfo = chkShowInfo.Checked;
-            Program.SaveSettings(_settings);
             if (chkShowInfo.Checked)
             {
                 panelLockedItems.Visible = false;
@@ -447,12 +449,16 @@ namespace FFLocker
                 PopulateLockedItems();
             }
 
-            int newHeight = _baseHeight;
+            int nonClientHeight = this.Height - this.ClientSize.Height;
+            int baseHeight = panelMain.Height + flowLayoutPanelControls.Height + nonClientHeight;
+            
+            int newHeight = baseHeight;
             if (panelLockedItems.Visible || panelLog.Visible)
             {
                 newHeight += PanelHeight;
             }
-            this.Height = newHeight;
+            
+            this.Height = Math.Max(newHeight, this.MinimumSize.Height);
             
             this.ResumeLayout();
         }
@@ -470,6 +476,14 @@ namespace FFLocker
         private void SetOperationUIEnabled(bool enabled)
         {
             SetMainUIEnabled(enabled);
+        }
+
+        private void btnAbout_Click(object sender, EventArgs e)
+        {
+            using (var aboutForm = new AboutForm())
+            {
+                aboutForm.ShowDialog(this);
+            }
         }
         #endregion
     }
