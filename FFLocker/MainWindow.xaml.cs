@@ -1,16 +1,16 @@
+using FFLocker.Logic;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
 using System.IO;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
-using FFLocker.Logic;
 
 namespace FFLocker
 {
     public sealed partial class MainWindow : Window
     {
-        private AppSettings _settings = new AppSettings();
+        private Logic.AppSettings _settings = new Logic.AppSettings();
 
         public MainWindow()
         {
@@ -22,7 +22,12 @@ namespace FFLocker
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
             var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
             
-            appWindow.Resize(new Windows.Graphics.SizeInt32(540, 600));
+            appWindow.Resize(new Windows.Graphics.SizeInt32(640, 600));
+
+            if (appWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter overlappedPresenter)
+            {
+                overlappedPresenter.IsMaximizable = false;
+            }
 
             if (Microsoft.UI.Windowing.AppWindowTitleBar.IsCustomizationSupported())
             {
@@ -134,25 +139,24 @@ namespace FFLocker
 
         private void ShowInfoCheckBox_Checked(object sender, RoutedEventArgs e)
         {
-            LogTextBox.Visibility = Visibility.Visible;
-            LockedItemsListView.Visibility = Visibility.Collapsed;
+            LogGrid.Visibility = Visibility.Visible;
         }
 
         private void ShowInfoCheckBox_Unchecked(object sender, RoutedEventArgs e)
         {
-            LogTextBox.Visibility = Visibility.Collapsed;
+            LogGrid.Visibility = Visibility.Collapsed;
         }
 
         private void ShowLockedButton_Click(object sender, RoutedEventArgs e)
         {
-            if (LockedItemsListView.Visibility == Visibility.Visible)
+            if (LockedItemsPanel.Visibility == Visibility.Visible)
             {
-                LockedItemsListView.Visibility = Visibility.Collapsed;
+                LockedItemsPanel.Visibility = Visibility.Collapsed;
                 ShowLockedButton.Content = "Show Locked Items";
             }
             else
             {
-                LockedItemsListView.Visibility = Visibility.Visible;
+                LockedItemsPanel.Visibility = Visibility.Visible;
                 ShowLockedButton.Content = "Hide Locked Items";
                 PopulateLockedItems();
             }
@@ -184,11 +188,11 @@ namespace FFLocker
             }
         }
 
-        private void DarkMode_Toggled(object sender, RoutedEventArgs e)
+        private void ThemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (sender is ToggleSwitch toggleSwitch)
+            if (sender is ComboBox comboBox)
             {
-                _settings.DarkMode = toggleSwitch.IsOn;
+                _settings.Theme = (Logic.Theme)comboBox.SelectedIndex;
                 ApplyTheme();
                 SaveSettings();
             }
@@ -205,23 +209,35 @@ namespace FFLocker
 
         private void PopulateLockedItems()
         {
+            if (LockedItemsListView == null || LockedItemsViewComboBox == null) return;
+
             LockedItemsDatabase.Reload();
             LockedItemsListView.Items.Clear();
             var lockedItems = LockedItemsDatabase.GetLockedItems();
+            var showOriginalNames = LockedItemsViewComboBox.SelectedIndex == 0;
 
             foreach (var item in lockedItems)
             {
-                string typePrefix = item.IsFolder ? "[D] " : "[F] ";
-                LockedItemsListView.Items.Add(typePrefix + item.OriginalPath);
+                if (item != null)
+                {
+                    string typePrefix = item.IsFolder ? "[D] " : "[F] ";
+                    string? pathToDisplay = showOriginalNames ? item.OriginalPath : item.LockedPath;
+                    if (pathToDisplay != null)
+                    {
+                        LockedItemsListView.Items.Add(typePrefix + pathToDisplay);
+                    }
+                }
             }
+        }
+
+        private void LockedItemsViewComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            PopulateLockedItems();
         }
 
         private void Log(string message)
         {
-            if (ShowInfoCheckBox.IsChecked == true)
-            {
-                LogTextBox.Text += message + Environment.NewLine;
-            }
+            LogTextBox.Text += message + Environment.NewLine;
         }
 
         private async Task<string?> GetPassword()
@@ -274,12 +290,12 @@ namespace FFLocker
                 if (File.Exists(settingsPath))
                 {
                     var json = File.ReadAllText(settingsPath);
-                    _settings = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                    _settings = System.Text.Json.JsonSerializer.Deserialize<Logic.AppSettings>(json) ?? new Logic.AppSettings();
                 }
             }
             catch { }
 
-            DarkModeCheckBox.IsOn = _settings.DarkMode;
+            ThemeComboBox.SelectedIndex = (int)_settings.Theme;
             ContextMenuCheckBox.IsChecked = RegistryManager.IsContextMenuEnabled();
         }
 
@@ -298,7 +314,18 @@ namespace FFLocker
         {
             if (Content is FrameworkElement rootElement)
             {
-                rootElement.RequestedTheme = _settings.DarkMode ? ElementTheme.Dark : ElementTheme.Light;
+                switch (_settings.Theme)
+                {
+                    case Logic.Theme.Light:
+                        rootElement.RequestedTheme = ElementTheme.Light;
+                        break;
+                    case Logic.Theme.Dark:
+                        rootElement.RequestedTheme = ElementTheme.Dark;
+                        break;
+                    case Logic.Theme.System:
+                        rootElement.RequestedTheme = ElementTheme.Default;
+                        break;
+                }
             }
         }
 

@@ -12,6 +12,7 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsPackageType>None</WindowsPackageType>
     <Nullable>enable</Nullable>
+    <ApplicationIcon>Assets\256x256_icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

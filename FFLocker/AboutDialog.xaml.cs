@@ -1,3 +1,4 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
 using System.Diagnostics;
@@ -9,9 +10,18 @@ namespace FFLocker
         public AboutDialog()
         {
             this.InitializeComponent();
+            this.Loaded += AboutDialog_Loaded;
         }
 
-        private void DonateButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        private void AboutDialog_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (this.XamlRoot?.Content is FrameworkElement rootElement)
+            {
+                this.RequestedTheme = rootElement.RequestedTheme;
+            }
+        }
+
+        private void DonateButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -25,6 +35,11 @@ namespace FFLocker
             {
                 // Could not open the link
             }
+        }
+
+        private void CloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            this.Hide();
         }
     }
 }
