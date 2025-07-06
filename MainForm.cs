@@ -36,7 +36,6 @@ namespace FFLocker
         private Operation _currentOperation = Operation.None;
         private AppSettings _settings;
         private ToolTip _toolTip = new ToolTip();
-        private int _baseHeight;
         private const int PanelHeight = 180;
 
         public MainForm(AppSettings settings)
@@ -65,8 +64,6 @@ namespace FFLocker
             chkShowInfo.CheckedChanged += chkShowInfo_CheckedChanged;
 
             cmbDisplayNameType.SelectedIndex = 0;
-            
-            _baseHeight = panelMain.Height + flowLayoutPanelControls.Height + 40;
             
             UpdateUIVisibility();
             
@@ -452,12 +449,16 @@ namespace FFLocker
                 PopulateLockedItems();
             }
 
-            int newHeight = _baseHeight;
+            int nonClientHeight = this.Height - this.ClientSize.Height;
+            int baseHeight = panelMain.Height + flowLayoutPanelControls.Height + nonClientHeight;
+            
+            int newHeight = baseHeight;
             if (panelLockedItems.Visible || panelLog.Visible)
             {
                 newHeight += PanelHeight;
             }
-            this.Height = newHeight;
+            
+            this.Height = Math.Max(newHeight, this.MinimumSize.Height);
             
             this.ResumeLayout();
         }
