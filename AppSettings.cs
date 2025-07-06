@@ -9,6 +9,5 @@ namespace FFLocker
         public Size WindowSize { get; set; } = Size.Empty;
         public bool WindowMaximized { get; set; } = false;
         public bool ContextMenuEnabled { get; set; } = false;
-        public bool ShowInfo { get; set; } = false;
     }
 }

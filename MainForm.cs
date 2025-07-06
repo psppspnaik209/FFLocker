@@ -37,7 +37,7 @@ namespace FFLocker
         private AppSettings _settings;
         private ToolTip _toolTip = new ToolTip();
         private int _baseHeight;
-        private const int PanelHeight = 150;
+        private const int PanelHeight = 180;
 
         public MainForm(AppSettings settings)
         {
@@ -61,15 +61,16 @@ namespace FFLocker
             chkContextMenu.CheckedChanged += chkContextMenu_CheckedChanged;
 
             chkShowInfo.CheckedChanged -= chkShowInfo_CheckedChanged;
-            chkShowInfo.Checked = _settings.ShowInfo;
+            chkShowInfo.Checked = false;
             chkShowInfo.CheckedChanged += chkShowInfo_CheckedChanged;
 
             cmbDisplayNameType.SelectedIndex = 0;
             
             _baseHeight = panelMain.Height + flowLayoutPanelControls.Height + 40;
-            this.Height = _baseHeight;
-
+            
             UpdateUIVisibility();
+            
+            this.txtPassword.KeyDown += new System.Windows.Forms.KeyEventHandler(this.txtPassword_KeyDown);
         }
 
         private void InitializeToolTips()
@@ -293,11 +294,17 @@ namespace FFLocker
                 if (chkShowInfo.Checked) {
                     if (this.InvokeRequired)
                     {
-                        this.Invoke(new Action(() => txtLog.AppendText(m + Environment.NewLine)));
+                        this.Invoke(new Action(() => {
+                            txtLog.AppendText(m + Environment.NewLine);
+                            txtLog.SelectionStart = txtLog.Text.Length;
+                            txtLog.ScrollToCaret();
+                        }));
                     }
                     else
                     {
                         txtLog.AppendText(m + Environment.NewLine);
+                        txtLog.SelectionStart = txtLog.Text.Length;
+                        txtLog.ScrollToCaret();
                     }
                 }
             });
@@ -349,8 +356,6 @@ namespace FFLocker
 
         private void chkShowInfo_CheckedChanged(object? sender, EventArgs e)
         {
-            _settings.ShowInfo = chkShowInfo.Checked;
-            Program.SaveSettings(_settings);
             if (chkShowInfo.Checked)
             {
                 panelLockedItems.Visible = false;
