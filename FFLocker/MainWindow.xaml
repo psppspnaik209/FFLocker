@@ -29,72 +29,59 @@
         </Grid>
 
         <Grid Grid.Row="1" Margin="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="0" Margin="0,0,0,8">
-                <TextBox
-                    x:Name="PathTextBox"
-                    Header="File or Folder Path"
-                    IsReadOnly="True"
-                    PlaceholderText="Select a file or folder" />
-                <Button
-                    x:Name="BrowseButton"
-                    Margin="0,4,0,0"
-                    HorizontalAlignment="Stretch"
-                    Click="BrowseButton_Click"
-                    Content="Browse..." />
-            </StackPanel>
-
-            <StackPanel Grid.Row="1" Margin="0,8,0,8" Orientation="Horizontal" Spacing="4">
-                <RadioButton
-                    x:Name="FileRadioButton"
-                    Content="File"
-                    GroupName="PathType"
-                    IsChecked="True" />
-                <RadioButton
-                    x:Name="FolderRadioButton"
-                    Content="Folder"
-                    GroupName="PathType" />
-            </StackPanel>
-
-            <StackPanel
-                Grid.Row="2"
-                Margin="0,8"
-                Orientation="Horizontal"
-                Spacing="8">
-                <Button
-                    x:Name="LockButton"
-                    HorizontalAlignment="Stretch"
-                    Click="LockButton_Click"
-                    Content="Lock" />
-                <Button
-                    x:Name="UnlockButton"
-                    HorizontalAlignment="Stretch"
-                    Click="UnlockButton_Click"
-                    Content="Unlock" />
-            </StackPanel>
-
-            <Grid Grid.Row="3" Margin="0,8">
-                <StackPanel x:Name="LockedItemsPanel" Visibility="Collapsed">
-                    <ComboBox x:Name="LockedItemsViewComboBox"
-                              Header="Display Names"
-                              SelectedIndex="0"
-                              SelectionChanged="LockedItemsViewComboBox_SelectionChanged"
-                              Margin="0,0,0,4">
-                        <ComboBoxItem Content="Original Names" />
-                        <ComboBoxItem Content="Fake Names" />
-                    </ComboBox>
-                    <ListView
-                        x:Name="LockedItemsListView"
-                        Header="Locked Items" />
+            <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,16,0" MinWidth="300">
+                <StackPanel>
+                    <TextBox
+                        x:Name="PathTextBox"
+                        Header="File or Folder Path"
+                        IsReadOnly="True"
+                        PlaceholderText="Select a file or folder"/>
+                    <Button
+                        x:Name="BrowseButton"
+                        Margin="0,4,0,0"
+                        HorizontalAlignment="Stretch"
+                        Click="BrowseButton_Click"
+                        Content="Browse..." />
                 </StackPanel>
-                <Grid x:Name="LogGrid" Visibility="Collapsed">
+
+                <StackPanel Margin="0,8,0,8" Orientation="Horizontal" HorizontalAlignment="Left">
+                    <RadioButton
+                        x:Name="FileRadioButton"
+                        Content="File"
+                        GroupName="PathType"
+                        IsChecked="True" />
+                    <RadioButton
+                        x:Name="FolderRadioButton"
+                        Margin="8,0,0,0"
+                        Content="Folder"
+                        GroupName="PathType" />
+                </StackPanel>
+
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <Button
+                        x:Name="LockButton"
+                        HorizontalAlignment="Stretch"
+                        Click="LockButton_Click"
+                        Content="Lock" />
+                    <Button
+                        x:Name="UnlockButton"
+                        HorizontalAlignment="Stretch"
+                        Click="UnlockButton_Click"
+                        Content="Unlock" />
+                </StackPanel>
+
+                <Grid x:Name="LogGrid" Visibility="Collapsed" Margin="0,16,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
@@ -109,16 +96,30 @@
                             Click="ClearLogButton_Click"
                             Content="Clear" />
                     </StackPanel>
-                    <TextBox
-                        x:Name="LogTextBox"
-                        Grid.Row="1"
-                        AcceptsReturn="True"
-                        IsReadOnly="True"
-                        ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="250">
+                        <TextBox
+                            x:Name="LogTextBox"
+                            AcceptsReturn="True"
+                            IsReadOnly="True" />
+                    </ScrollViewer>
                 </Grid>
-            </Grid>
+            </StackPanel>
 
-            <Grid Grid.Row="4" Margin="0,8,0,0">
+            <StackPanel Grid.Row="0" Grid.Column="1" x:Name="LockedItemsPanel" Visibility="Collapsed">
+                <ComboBox x:Name="LockedItemsViewComboBox"
+                          Header="Display Names"
+                          SelectedIndex="0"
+                          SelectionChanged="LockedItemsViewComboBox_SelectionChanged"
+                          Margin="0,0,0,4">
+                    <ComboBoxItem Content="Original Names" />
+                    <ComboBoxItem Content="Fake Names" />
+                </ComboBox>
+                <ListView
+                    x:Name="LockedItemsListView"
+                    Header="Locked Items" />
+            </StackPanel>
+
+            <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
