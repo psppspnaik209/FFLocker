@@ -477,6 +477,14 @@ namespace FFLocker
         {
             SetMainUIEnabled(enabled);
         }
+
+        private void btnAbout_Click(object sender, EventArgs e)
+        {
+            using (var aboutForm = new AboutForm())
+            {
+                aboutForm.ShowDialog(this);
+            }
+        }
         #endregion
     }
 }
