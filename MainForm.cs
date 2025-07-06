@@ -314,12 +314,12 @@ namespace FFLocker
                 if (_currentOperation == Operation.Lock)
                 {
                     await Task.Run(() => Program.Lock(path, passwordBuffer, progress, (IProgress<string>)logger));
-                    lblStatus.Text = "Lock operation completed successfully!";
+                    lblStatus.Text = "Lock successful!";
                 }
                 else if (_currentOperation == Operation.Unlock)
                 {
                     await Task.Run(() => Program.Unlock(path, passwordBuffer, progress, (IProgress<string>)logger));
-                    lblStatus.Text = "Unlock operation completed successfully!";
+                    lblStatus.Text = "Unlock successful!";
                 }
                 
                 txtPath.Text = "";

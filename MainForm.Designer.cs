@@ -268,7 +268,7 @@ namespace FFLocker
             this.txtLog.Size = new System.Drawing.Size(558, 103);
             this.txtLog.TabIndex = 10;
             // 
-            // flowLayoutPanelControls
+            // tableLayoutPanelControls
             // 
             this.flowLayoutPanelControls.Controls.Add(this.lblStatus);
             this.flowLayoutPanelControls.Controls.Add(this.chkShowInfo);
@@ -284,12 +284,12 @@ namespace FFLocker
             // 
             // lblStatus
             // 
-            this.lblStatus.AutoSize = true;
             this.lblStatus.Location = new System.Drawing.Point(12, 12);
             this.lblStatus.Name = "lblStatus";
-            this.lblStatus.Size = new System.Drawing.Size(39, 15);
+            this.lblStatus.Size = new System.Drawing.Size(250, 23);
             this.lblStatus.TabIndex = 8;
             this.lblStatus.Text = "Ready";
+            this.lblStatus.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             // 
             // chkShowInfo
             // 
