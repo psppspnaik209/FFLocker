@@ -11,29 +11,28 @@ using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 
-namespace FFLocker
+namespace FFLocker.Logic
 {
-    class FileMapping
+    public partial class FileMapping
     {
         public string Real { get; set; } = string.Empty;
         public string Obf { get; set; } = string.Empty;
-        public byte[] FileSalt { get; set; } = Array.Empty<byte>();
+        public byte[] FileSalt { get; set; } = [];
         public string Hash { get; set; } = string.Empty;
     }
 
-    class MetadataContainer
+    public partial class MetadataContainer
     {
         public string Version { get; set; } = "2.0";
-        public byte[] GlobalSalt { get; set; } = Array.Empty<byte>();
-        public List<FileMapping> Files { get; set; } = new List<FileMapping>();
-        public List<FileMapping> Directories { get; set; } = new List<FileMapping>();
+        public byte[] GlobalSalt { get; set; } = [];
+        public List<FileMapping> Files { get; set; } = [];
+        public List<FileMapping> Directories { get; set; } = [];
         public long CreatedTime { get; set; }
         public string Checksum { get; set; } = string.Empty;
     }
 
-    class EncryptionConfig
+    public partial class EncryptionConfig
     {
         public int ChunkSize { get; set; } = 1024 * 1024;
         public int MaxParallelism { get; set; } = Environment.ProcessorCount;
@@ -42,7 +41,7 @@ namespace FFLocker
         public int KeyDerivationIterations { get; set; } = 600_000;
     }
 
-    class SecureBuffer : IDisposable
+    public partial class SecureBuffer : IDisposable
     {
         private byte[] _buffer;
         private GCHandle _handle;
@@ -55,26 +54,38 @@ namespace FFLocker
             CryptographicOperations.ZeroMemory(_buffer);
         }
 
-        public byte[] Buffer => _disposed ? throw new ObjectDisposedException(nameof(SecureBuffer)) : _buffer;
-        public int Length => _disposed ? throw new ObjectDisposedException(nameof(SecureBuffer)) : _buffer.Length;
+        public byte[] Buffer
+        {
+            get
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _buffer;
+            }
+        }
+        public int Length
+        {
+            get
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _buffer.Length;
+            }
+        }
 
         public void Dispose()
         {
             if (!_disposed)
             {
-                if (_buffer != null)
-                {
-                    CryptographicOperations.ZeroMemory(_buffer);
-                    if (_handle.IsAllocated)
-                        _handle.Free();
-                    _buffer = null!;
-                }
+                CryptographicOperations.ZeroMemory(_buffer);
+                if (_handle.IsAllocated)
+                    _handle.Free();
+                _buffer = null!;
                 _disposed = true;
             }
+            GC.SuppressFinalize(this);
         }
     }
 
-    class SecureCrypto : IDisposable
+    public partial class SecureCrypto : IDisposable
     {
         private readonly RandomNumberGenerator _rng;
         private bool _disposed;
@@ -86,29 +97,27 @@ namespace FFLocker
 
         public void GetBytes(byte[] buffer)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(SecureCrypto));
+            ObjectDisposedException.ThrowIf(_disposed, this);
             _rng.GetBytes(buffer);
         }
 
         public void GetBytes(Span<byte> buffer)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(SecureCrypto));
+            ObjectDisposedException.ThrowIf(_disposed, this);
             _rng.GetBytes(buffer);
         }
 
         public string GenerateSecureFilename(int length)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(SecureCrypto));
-            
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
             var randomBytes = new byte[length];
             _rng.GetBytes(randomBytes);
-            
-            var base64 = Convert.ToBase64String(randomBytes)
+
+            return Convert.ToBase64String(randomBytes)
                 .Replace('+', '-')
                 .Replace('/', '_')
-                .TrimEnd('=');
-                
-            return base64.Length > length ? base64.Substring(0, length) : base64;
+                .TrimEnd('=')[..length];
         }
 
         public byte[] GenerateFileSalt()
@@ -125,17 +134,18 @@ namespace FFLocker
                 _rng?.Dispose();
                 _disposed = true;
             }
+            GC.SuppressFinalize(this);
         }
     }
 
-    class KeyDerivation : IDisposable
+    public partial class KeyDerivation : IDisposable
     {
         private bool _disposed;
 
         public byte[] DeriveKey(byte[] password, byte[] salt, int iterations, int keyLength)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(KeyDerivation));
-            
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
             using var kdf = new Rfc2898DeriveBytes(password, salt, iterations, HashAlgorithmName.SHA256);
             return kdf.GetBytes(keyLength);
         }
@@ -146,10 +156,11 @@ namespace FFLocker
             {
                 _disposed = true;
             }
+            GC.SuppressFinalize(this);
         }
     }
-    
-    class DualMetadataManager
+
+    public partial class DualMetadataManager
     {
         private const string PRIMARY_CONTAINER = ".fflmeta";
         private const string BACKUP_CONTAINER = ".fflbkup";
@@ -160,27 +171,27 @@ namespace FFLocker
             var containers = new[]
             {
                 Path.Combine(root, PRIMARY_CONTAINER),
-                Path.Combine(root, BACKUP_CONTAINER), 
+                Path.Combine(root, BACKUP_CONTAINER),
                 Path.Combine(root, RECOVERY_CONTAINER)
             };
 
             var metadataJson = JsonSerializer.SerializeToUtf8Bytes(metadata);
-            
+
             try
             {
                 for (int i = 0; i < containers.Length; i++)
                 {
                     var iv = new byte[12];
                     crypto.GetBytes(iv);
-                    
+
                     var encryptedData = new byte[metadataJson.Length];
                     var tag = new byte[16];
-                    
-                    using (var aes = new AesGcm(masterKey))
+
+                    using (var aes = new AesGcm(masterKey, 16))
                     {
                         aes.Encrypt(iv, metadataJson, encryptedData, tag);
                     }
-                    
+
                     var content = new StringBuilder();
                     content.AppendLine("# FFLocker Dual-Redundant Metadata Container");
                     content.AppendLine($"# Container Type: {(i == 0 ? "Primary" : i == 1 ? "Backup" : "Recovery")}");
@@ -191,11 +202,11 @@ namespace FFLocker
                     content.AppendLine($"iv:{Convert.ToBase64String(iv)}");
                     content.AppendLine($"tag:{Convert.ToBase64String(tag)}");
                     content.AppendLine($"data:{Convert.ToBase64String(encryptedData)}");
-                    
+
                     var tempPath = containers[i] + ".tmp";
                     File.WriteAllText(tempPath, content.ToString());
-                    File.Move(tempPath, containers[i]);
-                    
+                    File.Move(tempPath, containers[i], true);
+
                     logger.Report($"Saved {(i == 0 ? "primary" : i == 1 ? "backup" : "recovery")} metadata container");
                 }
             }
@@ -224,34 +235,34 @@ namespace FFLocker
                 try
                 {
                     logger.Report($"Attempting to load {(i == 0 ? "primary" : i == 1 ? "backup" : "recovery")} metadata container...");
-                    
+
                     var lines = File.ReadAllLines(containerPath);
-                    
-                    var globalSaltB64 = lines.First(l => l.StartsWith("global_salt:")).Substring(12);
-                    var ivB64 = lines.First(l => l.StartsWith("iv:")).Substring(3);
-                    var tagB64 = lines.First(l => l.StartsWith("tag:")).Substring(4);
-                    var dataB64 = lines.First(l => l.StartsWith("data:")).Substring(5);
-                    
+
+                    var globalSaltB64 = lines.First(l => l.StartsWith("global_salt:")).Split(':')[1];
+                    var ivB64 = lines.First(l => l.StartsWith("iv:")).Split(':')[1];
+                    var tagB64 = lines.First(l => l.StartsWith("tag:")).Split(':')[1];
+                    var dataB64 = lines.First(l => l.StartsWith("data:")).Split(':')[1];
+
                     var globalSalt = Convert.FromBase64String(globalSaltB64);
                     var iv = Convert.FromBase64String(ivB64);
                     var tag = Convert.FromBase64String(tagB64);
                     var encryptedData = Convert.FromBase64String(dataB64);
-                    
+
                     var masterKey = keyDerivation.DeriveKey(password, globalSalt, 600_000, 32);
-                    
+
                     try
                     {
                         var decryptedData = new byte[encryptedData.Length];
-                        using (var aes = new AesGcm(masterKey))
+                        using (var aes = new AesGcm(masterKey, 16))
                         {
                             aes.Decrypt(iv, encryptedData, tag, decryptedData);
                         }
-                        
+
                         var metadata = JsonSerializer.Deserialize<MetadataContainer>(decryptedData);
-                        
+
                         CryptographicOperations.ZeroMemory(decryptedData);
                         CryptographicOperations.ZeroMemory(masterKey);
-                        
+
                         logger.Report($"Successfully loaded {(i == 0 ? "primary" : i == 1 ? "backup" : "recovery")} metadata container");
                         return metadata;
                     }
@@ -266,7 +277,7 @@ namespace FFLocker
                     continue;
                 }
             }
-            
+
             return null;
         }
 
@@ -309,88 +320,12 @@ namespace FFLocker
         }
     }
 
-    class Program
+    public static class EncryptionManager
     {
         private const int SALT_SIZE = 32;
         private const int NONCE_SIZE = 12;
         private const int TAG_SIZE = 16;
         private static readonly EncryptionConfig Config = new();
-        private static readonly string SettingsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
-
-        [STAThread]
-        static void Main(string[] args)
-        {
-            Application.SetHighDpiMode(HighDpiMode.SystemAware);
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-
-            // Add a global exception handler
-            Application.ThreadException += new ThreadExceptionEventHandler(Application_ThreadException);
-            AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CurrentDomain_UnhandledException);
-
-            if (args.Length >= 2)
-            {
-                string operation = args[0].ToLower();
-                string path = args[1];
-
-                if ((operation == "lock" || operation == "unlock") && (File.Exists(path) || Directory.Exists(path)))
-                {
-                    // Pre-action checks
-                    if (operation == "lock" && DualMetadataManager.IsLocked(path))
-                    {
-                        MessageBox.Show("The selected file or folder is already locked.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-                    if (operation == "unlock" && !DualMetadataManager.IsLocked(path))
-                    {
-                        MessageBox.Show("The selected file or folder is not locked.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-                    
-                    Application.Run(new PasswordForm(operation, path));
-                }
-                else
-                {
-                    Application.Run(new MainForm(LoadSettings()));
-                }
-            }
-            else
-            {
-                Application.Run(new MainForm(LoadSettings()));
-            }
-        }
-
-        private static void Application_ThreadException(object sender, ThreadExceptionEventArgs e)
-        {
-            ShowExceptionDetails(e.Exception);
-        }
-
-        private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
-        {
-            ShowExceptionDetails(e.ExceptionObject as Exception);
-        }
-
-        private static void ShowExceptionDetails(Exception? ex)
-        {
-            if (ex == null) return;
-            MessageBox.Show(ex.Message, "An unexpected error occurred", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-
-        public static AppSettings LoadSettings()
-        {
-            if (File.Exists(SettingsFilePath))
-            {
-                var json = File.ReadAllText(SettingsFilePath);
-                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
-            }
-            return new AppSettings();
-        }
-        
-        public static void SaveSettings(AppSettings settings)
-        {
-            var json = JsonSerializer.Serialize(settings);
-            File.WriteAllText(SettingsFilePath, json);
-        }
 
         public static string Lock(string path, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
         {
@@ -407,7 +342,7 @@ namespace FFLocker
             {
                 throw new FileNotFoundException("The specified file or folder does not exist.", path);
             }
-            LockedItemsDatabase.Add(new LockedItemInfo { OriginalPath = path, LockedPath = lockedPath, IsFolder = Directory.Exists(path) });
+            LockedItemsDatabase.Add(new LockedItemInfo { OriginalPath = path, LockedPath = lockedPath, IsFolder = !File.Exists(path) });
             return lockedPath;
         }
 
@@ -426,14 +361,14 @@ namespace FFLocker
         public static string LockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
         {
             var sw = Stopwatch.StartNew();
-            
+
             using var crypto = new SecureCrypto();
             using var masterKeyBuffer = new SecureBuffer(32);
             using var globalSaltBuffer = new SecureBuffer(SALT_SIZE);
             using var keyDerivation = new KeyDerivation();
-            
+
             crypto.GetBytes(globalSaltBuffer.Buffer);
-            
+
             var derivedKey = keyDerivation.DeriveKey(password.Buffer, globalSaltBuffer.Buffer, Config.KeyDerivationIterations, 32);
             Array.Copy(derivedKey, masterKeyBuffer.Buffer, 32);
             CryptographicOperations.ZeroMemory(derivedKey);
@@ -457,10 +392,10 @@ namespace FFLocker
             {
                 var mapping = EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, crypto, logger);
                 fileMappings.Add(mapping);
-                
+
                 var processed = Interlocked.Increment(ref processedFiles);
                 var currentBytes = Interlocked.Add(ref processedBytes, fileInfo.Size);
-                
+
                 var percentage = (int)((double)processed / fileInfos.Count * 100);
                 progress.Report(percentage);
                 logger.Report($"Encrypted: {fileInfo.RelPath} ({FormatSize(fileInfo.Size)}) - Progress: {processed}/{fileInfos.Count}");
@@ -487,10 +422,10 @@ namespace FFLocker
             var metadata = new MetadataContainer
             {
                 GlobalSalt = globalSaltBuffer.Buffer.ToArray(),
-                Files = fileMappings.ToList(),
+                Files = [.. fileMappings],
                 Directories = dirMappings,
                 CreatedTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                Checksum = ComputeMetadataChecksum(fileMappings.ToList(), dirMappings)
+                Checksum = ComputeMetadataChecksum([.. fileMappings], dirMappings)
             };
 
             DualMetadataManager.SaveMetadata(root, metadata, masterKeyBuffer.Buffer, crypto, logger);
@@ -498,7 +433,7 @@ namespace FFLocker
             sw.Stop();
             var encryptionRate = totalBytes / (1024 * 1024.0) / sw.Elapsed.TotalSeconds;
             logger.Report($"Folder secured in {sw.Elapsed.TotalSeconds:F2}s - Rate: {encryptionRate:F1} MB/s");
-            
+
             return root;
         }
 
@@ -507,20 +442,20 @@ namespace FFLocker
             var sw = Stopwatch.StartNew();
 
             var metadata = DualMetadataManager.LoadMetadata(root, password.Buffer, logger);
-            if (metadata == null)
+            if (metadata is null)
             {
                 throw new Exception("Unable to decrypt metadata. Invalid password or corrupted containers.");
             }
 
             using var masterKeyBuffer = new SecureBuffer(32);
             using var keyDerivation = new KeyDerivation();
-            
+
             var derivedKey = keyDerivation.DeriveKey(password.Buffer, metadata.GlobalSalt, Config.KeyDerivationIterations, 32);
             Array.Copy(derivedKey, masterKeyBuffer.Buffer, 32);
             CryptographicOperations.ZeroMemory(derivedKey);
 
             logger.Report($"Loaded metadata: {metadata.Files.Count} files, {metadata.Directories.Count} directories");
-            
+
             logger.Report("Restoring directory structure...");
             foreach (var dirEntry in metadata.Directories.OrderBy(e => e.Real.Length))
             {
@@ -537,7 +472,7 @@ namespace FFLocker
             {
                 logger.Report($"Decrypting: {fileEntry.Real}");
                 DecryptFile(root, fileEntry, masterKeyBuffer.Buffer, logger);
-                
+
                 var processed = Interlocked.Increment(ref processedFiles);
                 var percentage = (int)((double)processed / metadata.Files.Count * 100);
                 progress.Report(percentage);
@@ -559,14 +494,14 @@ namespace FFLocker
             string relPath = Path.GetFileName(filePath);
 
             var sw = Stopwatch.StartNew();
-            
+
             using var crypto = new SecureCrypto();
             using var masterKeyBuffer = new SecureBuffer(32);
             using var globalSaltBuffer = new SecureBuffer(SALT_SIZE);
             using var keyDerivation = new KeyDerivation();
-            
+
             crypto.GetBytes(globalSaltBuffer.Buffer);
-            
+
             var derivedKey = keyDerivation.DeriveKey(password.Buffer, globalSaltBuffer.Buffer, Config.KeyDerivationIterations, 32);
             Array.Copy(derivedKey, masterKeyBuffer.Buffer, 32);
             CryptographicOperations.ZeroMemory(derivedKey);
@@ -578,9 +513,9 @@ namespace FFLocker
             var metadata = new MetadataContainer
             {
                 GlobalSalt = globalSaltBuffer.Buffer.ToArray(),
-                Files = new List<FileMapping> { mapping },
+                Files = [mapping],
                 CreatedTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                Checksum = ComputeMetadataChecksum(new List<FileMapping> { mapping }, new List<FileMapping>())
+                Checksum = ComputeMetadataChecksum([mapping], [])
             };
 
             logger.Report("Saving metadata...");
@@ -589,31 +524,31 @@ namespace FFLocker
             sw.Stop();
             var encryptionRate = new FileInfo(Path.Combine(root, mapping.Obf)).Length / (1024 * 1024.0) / sw.Elapsed.TotalSeconds;
             logger.Report($"File secured in {sw.Elapsed.TotalSeconds:F2}s - Rate: {encryptionRate:F1} MB/s");
-            
+
             return Path.Combine(root, mapping.Obf);
         }
 
         public static void UnlockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
         {
             string root = Path.GetDirectoryName(filePath)!;
-            
+
             var sw = Stopwatch.StartNew();
 
             var metadata = DualMetadataManager.LoadMetadata(root, password.Buffer, logger);
-            if (metadata == null)
+            if (metadata is null)
             {
                 throw new Exception("Unable to decrypt metadata. Invalid password or corrupted containers.");
             }
 
             using var masterKeyBuffer = new SecureBuffer(32);
             using var keyDerivation = new KeyDerivation();
-            
+
             var derivedKey = keyDerivation.DeriveKey(password.Buffer, metadata.GlobalSalt, Config.KeyDerivationIterations, 32);
             Array.Copy(derivedKey, masterKeyBuffer.Buffer, 32);
             CryptographicOperations.ZeroMemory(derivedKey);
 
             var fileEntry = metadata.Files.FirstOrDefault(f => Path.Combine(root, f.Obf) == filePath);
-            if (fileEntry == null)
+            if (fileEntry is null)
             {
                 throw new Exception("File not found in metadata.");
             }
@@ -635,25 +570,25 @@ namespace FFLocker
         {
             string inputPath = Path.Combine(root, relPath);
             string obfName = crypto.GenerateSecureFilename(Config.SecureRandomLength) + ".ffl";
-            string outputPath = Path.Combine(root, obfName);
+            string outputPath = Path.Combine(Path.GetDirectoryName(inputPath)!, obfName);
             string tempPath = outputPath + ".tmp";
 
             var fileSalt = crypto.GenerateFileSalt();
-            
+
             using var fileKeyBuffer = new SecureBuffer(32);
-            
+
             try
             {
                 logger.Report($" -> Deriving key for {relPath}");
                 DeriveFileKey(masterKey, relPath, fileSalt, fileKeyBuffer.Buffer);
-                
+
                 logger.Report($" -> Encrypting stream for {relPath}");
                 EncryptFileStream(inputPath, tempPath, fileKeyBuffer.Buffer, crypto);
-                
+
                 logger.Report($" -> Finalizing {relPath}");
-                File.Move(tempPath, outputPath);
+                File.Move(tempPath, outputPath, true);
                 SecureDeleteFile(inputPath);
-                
+
                 return new FileMapping { Real = relPath, Obf = obfName, FileSalt = fileSalt, Hash = ComputeHash(relPath, obfName) };
             }
             catch
@@ -666,7 +601,18 @@ namespace FFLocker
 
         static void DecryptFile(string root, FileMapping entry, byte[] masterKey, IProgress<string> logger)
         {
-            string encPath = Path.Combine(root, entry.Obf);
+            string? realDirectory = Path.GetDirectoryName(entry.Real);
+            string encPath;
+
+            if (string.IsNullOrEmpty(realDirectory))
+            {
+                encPath = Path.Combine(root, entry.Obf);
+            }
+            else
+            {
+                encPath = Path.Combine(root, realDirectory, entry.Obf);
+            }
+
             string realPath = Path.Combine(root, entry.Real);
             string tempPath = realPath + ".tmp";
 
@@ -675,24 +621,24 @@ namespace FFLocker
                 Directory.CreateDirectory(dir);
 
             using var fileKeyBuffer = new SecureBuffer(32);
-            
+
             try
             {
                 logger.Report($" -> Deriving key for {entry.Real}");
                 DeriveFileKey(masterKey, entry.Real, entry.FileSalt, fileKeyBuffer.Buffer);
-                
+
                 var expectedHash = ComputeHash(entry.Real, entry.Obf);
                 if (expectedHash != entry.Hash)
                 {
                     logger.Report($"[ERROR] Integrity check failed for {entry.Real}. Expected hash {expectedHash}, but got {entry.Hash}.");
                     throw new InvalidDataException($"Integrity verification failed for {entry.Real}");
                 }
-                
+
                 logger.Report($" -> Decrypting stream for {entry.Real}");
                 DecryptFileStream(encPath, tempPath, fileKeyBuffer.Buffer);
 
                 logger.Report($" -> Finalizing {entry.Real}");
-                File.Move(tempPath, realPath);
+                File.Move(tempPath, realPath, true);
                 SecureDeleteFile(encPath);
             }
             catch
@@ -707,26 +653,26 @@ namespace FFLocker
             using var inputStream = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, Config.BufferSize);
             using var outputStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, Config.BufferSize);
             using var writer = new BinaryWriter(outputStream);
-            
+
             writer.Write(inputStream.Length);
-            
+
             var buffer = new byte[Config.ChunkSize];
             int bytesRead;
-            
+
             while ((bytesRead = inputStream.Read(buffer, 0, buffer.Length)) > 0)
             {
                 var chunkNonce = new byte[NONCE_SIZE];
                 crypto.GetBytes(chunkNonce);
-                
+
                 var chunkData = new Span<byte>(buffer, 0, bytesRead);
                 var ciphertext = new byte[bytesRead];
                 var tag = new byte[TAG_SIZE];
-                
-                using (var aes = new AesGcm(key))
+
+                using (var aes = new AesGcm(key, 16))
                 {
                     aes.Encrypt(chunkNonce, chunkData, ciphertext, tag);
                 }
-                
+
                 writer.Write(chunkNonce);
                 writer.Write(bytesRead);
                 writer.Write(ciphertext);
@@ -739,28 +685,28 @@ namespace FFLocker
             using var inputStream = new FileStream(encPath, FileMode.Open, FileAccess.Read, FileShare.Read, Config.BufferSize);
             using var outputStream = new FileStream(realPath, FileMode.Create, FileAccess.Write, FileShare.None, Config.BufferSize);
             using var reader = new BinaryReader(inputStream);
-            
+
             long originalFileSize = reader.ReadInt64();
             long totalWritten = 0;
-            
+
             while (inputStream.Position < inputStream.Length)
             {
                 var chunkNonce = reader.ReadBytes(NONCE_SIZE);
                 int chunkSize = reader.ReadInt32();
                 var ciphertext = reader.ReadBytes(chunkSize);
                 var tag = reader.ReadBytes(TAG_SIZE);
-                
+
                 var plaintext = new byte[chunkSize];
-                
-                using (var aes = new AesGcm(key))
+
+                using (var aes = new AesGcm(key, 16))
                 {
                     aes.Decrypt(chunkNonce, ciphertext, tag, plaintext);
                 }
-                
+
                 long remainingBytes = originalFileSize - totalWritten;
                 int bytesToWrite = (int)Math.Min(chunkSize, remainingBytes);
                 outputStream.Write(plaintext, 0, bytesToWrite);
-                
+
                 totalWritten += bytesToWrite;
             }
         }
@@ -770,14 +716,14 @@ namespace FFLocker
         {
             var pathBytes = Encoding.UTF8.GetBytes(filePath);
             var combined = new byte[pathBytes.Length + fileSalt.Length];
-            
-            Array.Copy(pathBytes, combined, pathBytes.Length);
-            Array.Copy(fileSalt, 0, combined, pathBytes.Length, fileSalt.Length);
-            
+
+            Buffer.BlockCopy(pathBytes, 0, combined, 0, pathBytes.Length);
+            Buffer.BlockCopy(fileSalt, 0, combined, pathBytes.Length, fileSalt.Length);
+
             using var hmac = new HMACSHA256(masterKey);
             var derivedKey = hmac.ComputeHash(combined);
             Array.Copy(derivedKey, output, Math.Min(derivedKey.Length, output.Length));
-            
+
             CryptographicOperations.ZeroMemory(derivedKey);
             CryptographicOperations.ZeroMemory(combined);
         }
@@ -785,19 +731,17 @@ namespace FFLocker
         static string ComputeHash(string realPath, string obfPath)
         {
             var combined = Encoding.UTF8.GetBytes(realPath + "|" + obfPath);
-            using var sha256 = SHA256.Create();
-            var hash = sha256.ComputeHash(combined);
+            var hash = SHA256.HashData(combined);
             return Convert.ToBase64String(hash);
         }
 
         static string ComputeMetadataChecksum(List<FileMapping> files, List<FileMapping> directories)
         {
-            var allPaths = files.Select(f => f.Real).Concat(directories.Select(d => d.Real)).OrderBy(p => p);
+            var allPaths = files.Select(f => f.Real).Concat(directories.Select(d => d.Real)).Order();
             var combined = string.Join("|", allPaths);
             var bytes = Encoding.UTF8.GetBytes(combined);
-            
-            using var sha256 = SHA256.Create();
-            var hash = sha256.ComputeHash(bytes);
+
+            var hash = SHA256.HashData(bytes);
             return Convert.ToBase64String(hash);
         }
 
@@ -809,7 +753,7 @@ namespace FFLocker
                 {
                     var fileInfo = new FileInfo(filePath);
                     var randomData = new byte[Math.Min(fileInfo.Length, 1024 * 1024)];
-                    
+
                     using (var crypto = new SecureCrypto())
                     using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Write))
                     {
@@ -822,7 +766,7 @@ namespace FFLocker
                             remaining -= toWrite;
                         }
                     }
-                    
+
                     File.Delete(filePath);
                 }
             }

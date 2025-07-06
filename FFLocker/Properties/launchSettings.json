@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "FFLocker (Package)": {
+      "commandName": "MsixPackage",
+      "alwaysReinstallApp": false
+    },
+    "FFLocker (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

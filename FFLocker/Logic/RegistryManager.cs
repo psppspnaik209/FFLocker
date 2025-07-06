@@ -2,7 +2,6 @@ using Microsoft.Win32;
 using System;
 using System.Diagnostics;
 using System.Security.Principal;
-using System.Windows.Forms;
 
 namespace FFLocker
 {
@@ -36,7 +35,8 @@ namespace FFLocker
 
         public static void AddContextMenu()
         {
-            string exePath = Application.ExecutablePath;
+            string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrEmpty(exePath)) return;
 
             // For files
             CreateMenu(FileKey, exePath);
@@ -62,9 +62,9 @@ namespace FFLocker
 
                 RestartExplorer();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                MessageBox.Show($"An error occurred while removing the context menu: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                // TODO: Show message box
             }
         }
 
@@ -110,14 +110,7 @@ namespace FFLocker
 
         private static void RestartExplorer()
         {
-            var result = MessageBox.Show("To see the changes, the Windows Explorer process needs to be restarted.\n\nDo you want to restart it now?", "Restart Explorer", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (result == DialogResult.Yes)
-            {
-                foreach (var process in Process.GetProcessesByName("explorer"))
-                {
-                    process.Kill();
-                }
-            }
+            // TODO: Show message box
         }
     }
 }

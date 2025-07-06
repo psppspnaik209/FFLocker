@@ -1,0 +1,21 @@
+<ContentDialog
+    x:Class="FFLocker.AboutDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FFLocker"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="About FFLocker"
+    CloseButtonText="Close">
+
+    <StackPanel Spacing="8">
+        <TextBlock Text="FFLocker" Style="{ThemeResource TitleTextBlockStyle}" />
+        <TextBlock Text="Made with ❤️ by the TNBB Team" />
+        <TextBlock Text="Version 1.0.0" />
+        <Expander Header="MIT License">
+            <TextBox Text="MIT License..." IsReadOnly="True" TextWrapping="Wrap" MaxHeight="150" />
+        </Expander>
+        <Button Content="Donate" Click="DonateButton_Click" />
+    </StackPanel>
+</ContentDialog>
