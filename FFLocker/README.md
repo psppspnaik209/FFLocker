@@ -1,88 +1,83 @@
 # FFLocker (File & Folder Locker)
 
-FFLocker is a modern Windows application built with WinUI 3 that provides strong, password-based encryption for your files and folders. It is designed with a focus on security and a clean, easy-to-use interface.
+FFLocker is a lightweight, open-source Windows application for securing your files and folders with strong, password-based encryption. It is built with a modern WinUI 3 interface and integrates directly into the Windows shell for ease of use.
 
 ## Features
 
-*   **Strong Encryption:** Uses AES-256-GCM for authenticated encryption, ensuring both the confidentiality and integrity of your data.
-*   **Robust Key Derivation:** Implements PBKDF2 with 600,000 iterations (HMAC-SHA256) to derive a strong encryption key from your password.
-*   **Modern UI:** A clean and intuitive user interface built with WinUI 3, featuring:
-    *   Light and Dark mode support.
-    *   A log view for detailed operation information.
-    *   A list of all locked items.
-*   **Windows Integration:**
-    *   Optionally integrate FFLocker into the Windows context menu for quick lock/unlock operations.
-*   **Reliable and Performant:**
-    *   Creates redundant copies of encryption metadata to protect against data loss.
-    *   Encrypts and decrypts files of any size with minimal memory usage by processing them in chunks.
-    *   Utilizes multiple CPU cores to speed up operations on folders.
+*   **Strong Encryption:** Uses AES-256-GCM for authenticated encryption, which protects both the confidentiality and integrity of your data.
+*   **Robust Password Protection:** Implements PBKDF2 (HMAC-SHA256) with 600,000 iterations to derive a strong encryption key from your password, making brute-force attacks difficult.
+*   **Modern & Efficient UI:**
+    *   A clean user interface built with WinUI 3.
+    *   Support for Light, Dark, and system-default themes.
+    *   A two-column layout that allows you to view locked items and primary controls side-by-side.
+    *   A detailed log view for troubleshooting and observing operations.
+*   **Windows Explorer Integration:**
+    *   Optionally add "Lock" and "Unlock" commands to the Windows context menu for any file or folder.
+    *   Requires running the application as an administrator once to enable/disable.
+*   **Locked Item Management:**
+    *   View a list of all items you have locked.
+    *   Toggle between viewing the items' original names and their encrypted (fake) names.
 
 ## Getting Started
 
 ### Prerequisites
 
-*   **Windows** operating system.
-*   **.NET 8 SDK** or later.
+*   Windows 10 or later.
+*   [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or later.
 *   **Visual Studio 2022** with the **.NET Multi-platform App UI development** workload installed.
 
-### Installation & Building
+### Building from Source
 
 1.  **Clone the repository:**
     ```bash
     git clone https://github.com/psppspnaik209/FFLocker.git
     ```
-2.  **Open the solution** (`FFLocker.sln`) in Visual Studio 2022.
+2.  **Open the solution:**
+    *   Open `FFLocker.sln` in Visual Studio 2022.
 3.  **Build the application:**
-    *   From the menu, select `Build > Build Solution`.
-    *   Alternatively, press `Ctrl+Shift+B`.
-
-### Running the Application
-
-*   In the Visual Studio toolbar, ensure `FFLocker (Unpackaged)` is selected as the startup project.
-*   Press the green "play" button or press `F5` to run the application.
+    *   From the menu, select `Build > Build Solution` (or press `Ctrl+Shift+B`).
+    *   Ensure `FFLocker (Unpackaged)` is selected as the startup project in the toolbar.
+    *   Press `F5` to run.
 
 ## How to Use
 
 ### Main Application
 
-*   **Selecting a File or Folder:**
-    1.  Choose whether you want to select a "File" or "Folder" using the radio buttons.
-    2.  Click the "Browse..." button to select the item you want to lock or unlock.
-*   **Locking and Unlocking:**
-    1.  Click the "Lock" or "Unlock" button.
-    2.  A dialog will appear prompting you for a password. Enter your password and click "Confirm" or press Enter.
-*   **Viewing Locked Items:**
-    *   Click the "Show Locked Items" button to see a list of all files and folders you have locked.
-*   **Options:**
-    *   **Dark/Light Mode:** Use the toggle switch to change the application theme. Your preference is saved automatically.
-    *   **Log:** See detailed logs of the application's operations.
-    *   **Context Menu:** Enable or disable the Windows context menu integration.
+1.  **Select a File or Folder:**
+    *   Use the **File** or **Folder** radio buttons to choose what you want to select.
+    *   Click **Browse...** to open the file/folder dialog and make your selection.
+2.  **Locking and Unlocking:**
+    *   Click the **Lock** or **Unlock** button.
+    *   Enter your password when prompted.
+3.  **Viewing Locked Items:**
+    *   Click the **Show Locked Items** button to display the list of all encrypted items.
+    *   Use the **Display Names** dropdown above the list to toggle between seeing the original file/folder names and the encrypted names on disk.
+4.  **Log:**
+    *   Check the **Log** box to see a detailed view of application operations.
 
 ### Context Menu
 
-For convenience, you can integrate FFLocker directly into the Windows right-click context menu.
+To lock and unlock files directly from Windows Explorer:
 
-*   **Enabling the Context Menu:**
-    1.  **Run `FFLocker.exe` as an administrator.**
-    2.  Click the "Context Menu" checkbox in the application.
-*   **Using the Context Menu:**
-    1.  Right-click on any file or folder.
-    2.  Go to the "FFLocker" sub-menu.
-    3.  Click "Lock" or "Unlock."
-    4.  A dialog will open, prompting you for your password.
+1.  **Run FFLocker as an administrator** one time.
+2.  Check the **Context Menu** box in the app.
+3.  A dialog will ask if you want to restart Windows Explorer. This is necessary for the changes to appear.
+4.  You can now right-click on any file or folder and use the "FFLocker" submenu.
 
-## Security Considerations
+## Security Summary: Pros & Cons
 
-*   **Password Strength is Critical:** The security of your locked files and folders depends entirely on the strength of your password. Use a long, complex, and unique password.
-*   **No Password Recovery:** There is **no way** to recover a lost password. If you forget your password, your data will be permanently inaccessible.
-*   **Threat Model:**
-    *   **Protects against:** Unauthorized access to your files on a stolen or compromised computer.
-    *   **Does not protect against:** Malware on a running system, such as keyloggers or screen recorders, that could capture your password as you type it.
+### ✔️ Pros (What FFLocker Does Well)
+*   **Strong, Modern Encryption:** Uses the industry-standard AES-256-GCM algorithm to protect your data.
+*   **Offline Attack Protection:** An excellent choice for protecting files on a laptop, external hard drive, or USB stick that might be lost or stolen.
+*   **Ease of Use:** A simple, no-frills interface for quickly locking and unlocking files.
 
-## Limitations
+### ❌ Cons (What FFLocker Cannot Do)
+*   **No Protection on a Compromised System:** If your computer has a virus or keylogger, your password can be stolen, and this tool cannot protect you. Always ensure your system is secure *before* using FFLocker.
+*   **No Plausible Deniability:** It is obvious that the encrypted `.ffl` files are locked by this tool.
+*   **No Password Recovery:** This is a feature, not a bug. If you forget your password, your data is gone forever.
 
-*   **Windows Only:** This application is designed for and tested on Windows.
-*   **Files in Use:** FFLocker cannot encrypt files that are currently open or in use by another program.
+### **Your Password is Your Key**
+The security of this entire system rests on the strength of your password. Please use a **long, complex, and unique password** that you will not forget.
 
 ## License
 

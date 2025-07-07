@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 
@@ -45,32 +46,57 @@ namespace FFLocker
         {
             try
             {
-                if (FileRadioButton.IsChecked == true)
+                var path = await PickPathWithCom();
+                if (!string.IsNullOrEmpty(path))
                 {
-                    var openPicker = new FileOpenPicker();
-                    openPicker.FileTypeFilter.Add("*");
-                    InitializeWithWindow(openPicker);
-                    var file = await openPicker.PickSingleFileAsync();
-                    if (file != null)
-                    {
-                        PathTextBox.Text = file.Path;
-                    }
-                }
-                else
-                {
-                    var folderPicker = new FolderPicker();
-                    InitializeWithWindow(folderPicker);
-                    var folder = await folderPicker.PickSingleFolderAsync();
-                    if (folder != null)
-                    {
-                        PathTextBox.Text = folder.Path;
-                    }
+                    PathTextBox.Text = path;
                 }
             }
             catch (Exception ex)
             {
                 await ShowMessage($"An error occurred while opening the browser: {ex.Message}");
             }
+        }
+
+        private Task<string?> PickPathWithCom()
+        {
+            bool isFolderPicker = FolderRadioButton.IsChecked == true;
+
+            return Task.Run(() =>
+            {
+                var dialog = (IFileOpenDialog)new FileOpenDialogCoClass();
+                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+
+                try
+                {
+                    FOS options;
+                    dialog.GetOptions(out options);
+
+                    if (isFolderPicker)
+                    {
+                        options |= FOS.FOS_PICKFOLDERS;
+                    }
+                    else
+                    {
+                        options |= FOS.FOS_FILEMUSTEXIST;
+                    }
+                    dialog.SetOptions(options);
+
+                    if (dialog.Show(hwnd) == 0) // 0 is S_OK
+                    {
+                        IShellItem result;
+                        dialog.GetResult(out result);
+                        string path;
+                        result.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out path);
+                        return path;
+                    }
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(dialog);
+                }
+                return null;
+            });
         }
 
         private async void LockButton_Click(object sender, RoutedEventArgs e)
@@ -102,6 +128,7 @@ namespace FFLocker
                     await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, progress, logger));
                     await ShowMessage("Lock successful!");
                     PathTextBox.Text = "";
+                    PopulateLockedItems();
                 }
             }
             catch (Exception ex)
@@ -139,6 +166,7 @@ namespace FFLocker
                     await Task.Run(() => EncryptionManager.Unlock(path, passwordBuffer, progress, logger));
                     await ShowMessage("Unlock successful!");
                     PathTextBox.Text = "";
+                    PopulateLockedItems();
                 }
             }
             catch (Exception ex)
