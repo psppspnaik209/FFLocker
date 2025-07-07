@@ -22,6 +22,9 @@ namespace FFLocker
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
             var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
             
+            string iconPath = System.IO.Path.Combine(System.AppContext.BaseDirectory, "Assets", "256x256_icon.ico");
+            appWindow.SetIcon(iconPath);
+            
             appWindow.Resize(new Windows.Graphics.SizeInt32(640, 600));
 
             if (appWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter overlappedPresenter)
@@ -40,26 +43,33 @@ namespace FFLocker
 
         private async void BrowseButton_Click(object sender, RoutedEventArgs e)
         {
-            if (FileRadioButton.IsChecked == true)
+            try
             {
-                var openPicker = new FileOpenPicker();
-                openPicker.FileTypeFilter.Add("*");
-                InitializeWithWindow(openPicker);
-                var file = await openPicker.PickSingleFileAsync();
-                if (file != null)
+                if (FileRadioButton.IsChecked == true)
                 {
-                    PathTextBox.Text = file.Path;
+                    var openPicker = new FileOpenPicker();
+                    openPicker.FileTypeFilter.Add("*");
+                    InitializeWithWindow(openPicker);
+                    var file = await openPicker.PickSingleFileAsync();
+                    if (file != null)
+                    {
+                        PathTextBox.Text = file.Path;
+                    }
+                }
+                else
+                {
+                    var folderPicker = new FolderPicker();
+                    InitializeWithWindow(folderPicker);
+                    var folder = await folderPicker.PickSingleFolderAsync();
+                    if (folder != null)
+                    {
+                        PathTextBox.Text = folder.Path;
+                    }
                 }
             }
-            else
+            catch (Exception ex)
             {
-                var folderPicker = new FolderPicker();
-                InitializeWithWindow(folderPicker);
-                var folder = await folderPicker.PickSingleFolderAsync();
-                if (folder != null)
-                {
-                    PathTextBox.Text = folder.Path;
-                }
+                await ShowMessage($"An error occurred while opening the browser: {ex.Message}");
             }
         }
 
@@ -162,29 +172,59 @@ namespace FFLocker
             }
         }
 
-        private void ContextMenuCheckBox_Checked(object sender, RoutedEventArgs e)
+        private bool _isHandlingContextMenuCheck = false;
+
+        private async void ContextMenuCheckBox_Checked(object sender, RoutedEventArgs e)
         {
+            if (_isHandlingContextMenuCheck) return;
+            _isHandlingContextMenuCheck = true;
+
             if (RegistryManager.IsAdmin())
             {
-                RegistryManager.AddContextMenu();
+                await Task.Run(() => RegistryManager.AddContextMenu());
+                await ShowRestartExplorerPrompt();
             }
             else
             {
-                ShowMessage("This feature requires administrator privileges.").GetAwaiter();
+                await ShowMessage("This feature requires administrator privileges.");
                 ContextMenuCheckBox.IsChecked = false;
             }
+            _isHandlingContextMenuCheck = false;
         }
 
-        private void ContextMenuCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        private async void ContextMenuCheckBox_Unchecked(object sender, RoutedEventArgs e)
         {
+            if (_isHandlingContextMenuCheck) return;
+            _isHandlingContextMenuCheck = true;
+
             if (RegistryManager.IsAdmin())
             {
-                RegistryManager.RemoveContextMenu();
+                await Task.Run(() => RegistryManager.RemoveContextMenu());
+                await ShowRestartExplorerPrompt();
             }
             else
             {
-                ShowMessage("This feature requires administrator privileges.").GetAwaiter();
+                await ShowMessage("This feature requires administrator privileges.");
                 ContextMenuCheckBox.IsChecked = true;
+            }
+            _isHandlingContextMenuCheck = false;
+        }
+
+        private async Task ShowRestartExplorerPrompt()
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Restart Explorer",
+                Content = "To see the changes, the Windows Explorer process needs to be restarted.\n\nDo you want to restart it now?",
+                PrimaryButtonText = "Yes",
+                CloseButtonText = "No",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+            {
+                await Task.Run(() => RegistryManager.RestartExplorer());
             }
         }
 

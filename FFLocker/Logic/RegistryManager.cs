@@ -43,8 +43,6 @@ namespace FFLocker
 
             // For folders
             CreateMenu(FolderKey, exePath);
-
-            RestartExplorer();
         }
 
         public static void RemoveContextMenu()
@@ -59,8 +57,6 @@ namespace FFLocker
                 {
                     key?.DeleteSubKeyTree(MenuName, false);
                 }
-
-                RestartExplorer();
             }
             catch (Exception)
             {
@@ -108,9 +104,19 @@ namespace FFLocker
             }
         }
 
-        private static void RestartExplorer()
+        public static void RestartExplorer()
         {
-            // TODO: Show message box
+            try
+            {
+                foreach (var process in Process.GetProcessesByName("explorer"))
+                {
+                    process.Kill();
+                }
+            }
+            catch
+            {
+                // Fails silently if it can't kill explorer.
+            }
         }
     }
 }
