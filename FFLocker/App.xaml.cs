@@ -53,7 +53,7 @@ namespace FFLocker
                     System.Text.Encoding.UTF8.GetBytes(password, 0, password.Length, passwordBuffer.Buffer, 0);
                     if (operation == "lock")
                     {
-                        await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, progress, logger));
+                        EncryptionManager.Lock(path, passwordBuffer, progress, logger);
                     }
                     else if (operation == "unlock")
                     {

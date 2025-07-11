@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -25,6 +26,9 @@ namespace FFLocker.Logic
         public byte[] EncryptedPath { get; set; } = [];
         public byte[] PathEncryptionTag { get; set; } = new byte[16];
         public long OriginalFileLength { get; set; }
+        public bool IsHelloUsed { get; set; }
+        public ushort HelloEncryptedKeyLength { get; set; }
+        public byte[] HelloEncryptedKey { get; set; } = [];
 
         public int GetHeaderSize()
         {
@@ -46,6 +50,14 @@ namespace FFLocker.Logic
 
             var fileLengthBytes = BitConverter.GetBytes(OriginalFileLength);
             stream.Write(fileLengthBytes, 0, fileLengthBytes.Length);
+
+            stream.WriteByte(IsHelloUsed ? (byte)1 : (byte)0);
+            if (IsHelloUsed)
+            {
+                var helloKeyLengthBytes = BitConverter.GetBytes(HelloEncryptedKeyLength);
+                stream.Write(helloKeyLengthBytes, 0, helloKeyLengthBytes.Length);
+                stream.Write(HelloEncryptedKey, 0, HelloEncryptedKey.Length);
+            }
         }
 
         public static FileHeader ReadFrom(Stream stream)
@@ -78,6 +90,17 @@ namespace FFLocker.Logic
             buffer = new byte[8];
             stream.Read(buffer, 0, 8);
             header.OriginalFileLength = BitConverter.ToInt64(buffer, 0);
+
+            header.IsHelloUsed = stream.ReadByte() == 1;
+            if (header.IsHelloUsed)
+            {
+                buffer = new byte[2];
+                stream.Read(buffer, 0, 2);
+                header.HelloEncryptedKeyLength = BitConverter.ToUInt16(buffer, 0);
+
+                header.HelloEncryptedKey = new byte[header.HelloEncryptedKeyLength];
+                stream.Read(header.HelloEncryptedKey, 0, header.HelloEncryptedKey.Length);
+            }
 
             return header;
         }
@@ -241,17 +264,76 @@ namespace FFLocker.Logic
             return false;
         }
 
-        public static string Lock(string path, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
+        public static bool IsHelloUsed(string path)
+        {
+            if (!File.Exists(path)) return false;
+            try
+            {
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
+                var header = FileHeader.ReadFrom(fs);
+                return header.IsHelloUsed;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static FileHeader? GetFileHeader(string path)
+        {
+            if (!File.Exists(path)) return null;
+            try
+            {
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
+                return FileHeader.ReadFrom(fs);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static void UnlockWithMasterKey(string path, SecureBuffer masterKey, IProgress<int> progress, IProgress<string> logger)
+        {
+            if (path.EndsWith(".ffl", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+            {
+                var sw = Stopwatch.StartNew();
+                var header = GetFileHeader(path);
+                if (header == null) throw new Exception("Could not read file header.");
+                
+                var originalPath = DecryptPathFromHeader(header, masterKey.Buffer);
+                var realPath = Path.Combine(Path.GetDirectoryName(path)!, originalPath);
+                
+                logger.Report($"Decrypting file: {originalPath}");
+                var (tempPath, finalPath) = DecryptFile(path, realPath, masterKey.Buffer, logger);
+                
+                File.Move(tempPath, finalPath, true);
+                SecureDeleteFile(path);
+                
+                progress.Report(100);
+                LockedItemsDatabase.Remove(realPath);
+
+                sw.Stop();
+                logger.Report($"File unlocked in {sw.Elapsed.TotalSeconds:F2}s");
+            }
+            else if (Directory.Exists(path))
+            {
+                // For folders, the existing UnlockFolder method already uses the master key correctly.
+                UnlockFolder(path, masterKey, progress, logger);
+            }
+        }
+
+        public static string Lock(string path, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, byte[]? helloEncryptedKey = null)
         {
             string lockedPath;
             bool isFolder = false;
             if (File.Exists(path))
             {
-                lockedPath = LockFile(path, password, progress, logger);
+                lockedPath = LockFile(path, password, progress, logger, helloEncryptedKey);
             }
             else if (Directory.Exists(path))
             {
-                lockedPath = LockFolder(path, password, progress, logger);
+                lockedPath = LockFolder(path, password, progress, logger, helloEncryptedKey);
                 isFolder = true;
             }
             else
@@ -274,7 +356,7 @@ namespace FFLocker.Logic
             }
         }
 
-        public static string LockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
+        public static string LockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, byte[]? helloEncryptedKey)
         {
             var sw = Stopwatch.StartNew();
 
@@ -307,12 +389,11 @@ namespace FFLocker.Logic
             {
                 Parallel.ForEach(fileInfos, parallelOptions, (fileInfo, loopState) =>
                 {
-                    var paths = EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger);
+                    var paths = EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger, helloEncryptedKey != null, helloEncryptedKey);
                     encryptedFilePaths.Add(paths);
                     var processed = Interlocked.Increment(ref processedFiles);
                     var percentage = (int)((double)processed / fileInfos.Count * 100);
                     progress.Report(percentage);
-                    logger.Report($"Encrypted: {fileInfo.RelPath} ({FormatSize(fileInfo.Size)}) - Progress: {processed}/{fileInfos.Count}");
                 });
             }
             catch (Exception ex)
@@ -420,14 +501,12 @@ namespace FFLocker.Logic
             {
                 Parallel.ForEach(fileMappings, new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism }, mapping =>
                 {
-                    logger.Report($"Decrypting: {Path.GetFileName(mapping.Value)}");
                     var paths = DecryptFile(mapping.Key, mapping.Value, masterKeyBuffer.Buffer, logger);
                     decryptedFilePaths.Add(paths);
 
                     var processed = Interlocked.Increment(ref processedFiles);
                     var percentage = (int)((double)processed / fileMappings.Count * 100);
                     progress.Report(percentage);
-                    logger.Report($"Decrypted: {Path.GetFileName(mapping.Value)} - Progress: {processed}/{fileMappings.Count}");
                 });
             }
             catch(Exception ex)
@@ -478,7 +557,7 @@ namespace FFLocker.Logic
             }
         }
 
-        public static string LockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
+        public static string LockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, byte[]? helloEncryptedKey = null)
         {
             string root = Path.GetDirectoryName(filePath)!;
             string relPath = Path.GetFileName(filePath);
@@ -498,7 +577,7 @@ namespace FFLocker.Logic
 
             logger.Report($"Encrypting file: {relPath} ({FormatSize(new FileInfo(filePath).Length)})");
             
-            var (originalPath, tempPath, finalPath) = EncryptFile(root, relPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger);
+            var (originalPath, tempPath, finalPath) = EncryptFile(root, relPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger, helloEncryptedKey != null, helloEncryptedKey);
             
             File.Move(tempPath, finalPath, true);
             SecureDeleteFile(originalPath);
@@ -543,7 +622,7 @@ namespace FFLocker.Logic
             logger.Report($"File unlocked in {sw.Elapsed.TotalSeconds:F2}s");
         }
 
-        static (string, string, string) EncryptFile(string root, string relPath, byte[] masterKey, byte[] globalSalt, SecureCrypto crypto, IProgress<string> logger)
+        static (string, string, string) EncryptFile(string root, string relPath, byte[] masterKey, byte[] globalSalt, SecureCrypto crypto, IProgress<string> logger, bool useHello, byte[]? helloKey)
         {
             string inputPath = Path.Combine(root, relPath);
             string obfName = crypto.GenerateSecureFilename(Config.SecureRandomLength) + ".ffl";
@@ -562,6 +641,16 @@ namespace FFLocker.Logic
                 aes.Encrypt(pathNonce, pathBytes, encryptedPath, pathTag);
             }
 
+            byte[]? finalHelloProtectedKey = null;
+            if (useHello && helloKey != null)
+            {
+                finalHelloProtectedKey = new byte[32];
+                for (int i = 0; i < 32; i++)
+                {
+                    finalHelloProtectedKey[i] = (byte)(masterKey[i] ^ helloKey[i]);
+                }
+            }
+
             var header = new FileHeader
             {
                 GlobalSalt = globalSalt,
@@ -570,7 +659,10 @@ namespace FFLocker.Logic
                 PathLength = (ushort)encryptedPath.Length,
                 EncryptedPath = encryptedPath,
                 PathEncryptionTag = pathTag,
-                OriginalFileLength = new FileInfo(inputPath).Length
+                OriginalFileLength = new FileInfo(inputPath).Length,
+                IsHelloUsed = useHello,
+                HelloEncryptedKey = finalHelloProtectedKey ?? [],
+                HelloEncryptedKeyLength = (ushort)(finalHelloProtectedKey?.Length ?? 0)
             };
 
             try

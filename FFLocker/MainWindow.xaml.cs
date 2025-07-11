@@ -4,23 +4,26 @@ using Microsoft.UI.Xaml.Controls;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.WindowsRuntime;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
+using Windows.Storage.Streams;
 
 namespace FFLocker
 {
     public sealed partial class MainWindow : Window
     {
         private Logic.AppSettings _settings = new Logic.AppSettings();
+        private IntPtr _hwnd;
 
         public MainWindow()
         {
             this.InitializeComponent();
-            LoadSettings();
-            ApplyTheme();
-
-            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+            
+            _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(_hwnd);
             var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
             
             string iconPath = System.IO.Path.Combine(System.AppContext.BaseDirectory, "Assets", "256x256_icon.ico");
@@ -40,13 +43,16 @@ namespace FFLocker
                 appWindow.TitleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
                 SetTitleBar(AppTitleBar);
             }
+            
+            LoadSettings();
+            ApplyTheme();
         }
 
         private async void BrowseButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                var path = await PickPathWithCom();
+                var path = await PickPathAsync();
                 if (!string.IsNullOrEmpty(path))
                 {
                     PathTextBox.Text = path;
@@ -58,45 +64,24 @@ namespace FFLocker
             }
         }
 
-        private Task<string?> PickPathWithCom()
+        private async Task<string?> PickPathAsync()
         {
-            bool isFolderPicker = FolderRadioButton.IsChecked == true;
-
-            return Task.Run(() =>
+            if (FolderRadioButton.IsChecked == true)
             {
-                var dialog = (IFileOpenDialog)new FileOpenDialogCoClass();
-                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-
-                try
-                {
-                    FOS options;
-                    dialog.GetOptions(out options);
-
-                    if (isFolderPicker)
-                    {
-                        options |= FOS.FOS_PICKFOLDERS;
-                    }
-                    else
-                    {
-                        options |= FOS.FOS_FILEMUSTEXIST;
-                    }
-                    dialog.SetOptions(options);
-
-                    if (dialog.Show(hwnd) == 0) // 0 is S_OK
-                    {
-                        IShellItem result;
-                        dialog.GetResult(out result);
-                        string path;
-                        result.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out path);
-                        return path;
-                    }
-                }
-                finally
-                {
-                    Marshal.ReleaseComObject(dialog);
-                }
-                return null;
-            });
+                var folderPicker = new FolderPicker();
+                InitializeWithWindow(folderPicker);
+                folderPicker.FileTypeFilter.Add("*");
+                var folder = await folderPicker.PickSingleFolderAsync();
+                return folder?.Path;
+            }
+            else
+            {
+                var filePicker = new FileOpenPicker();
+                InitializeWithWindow(filePicker);
+                filePicker.FileTypeFilter.Add("*");
+                var file = await filePicker.PickSingleFileAsync();
+                return file?.Path;
+            }
         }
 
         private async void LockButton_Click(object sender, RoutedEventArgs e)
@@ -114,8 +99,8 @@ namespace FFLocker
                 return;
             }
 
-            var password = await GetPassword();
-            if (string.IsNullOrEmpty(password)) return;
+            var passwordResult = await GetPassword();
+            if (passwordResult is null || string.IsNullOrEmpty(passwordResult.Password)) return;
 
             var progress = new Progress<int>(p => { });
             var logger = new Progress<string>(m => Log(m));
@@ -123,10 +108,34 @@ namespace FFLocker
             SetUiInteraction(false);
             try
             {
-                using (var passwordBuffer = new SecureBuffer(System.Text.Encoding.UTF8.GetByteCount(password)))
+                byte[]? helloKey = null;
+                if (passwordResult.UseHello)
                 {
-                    System.Text.Encoding.UTF8.GetBytes(password, 0, password.Length, passwordBuffer.Buffer, 0);
-                    await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, progress, logger));
+                    if (!await HelloManager.IsHelloSupportedAsync())
+                    {
+                        Log("Windows Hello is not supported on this device.");
+                    }
+                    else
+                    {
+                        Log("Requesting Windows Hello signature to protect the master key...");
+                        helloKey = await HelloManager.GenerateHelloDerivedKeyAsync(_hwnd);
+
+                        if (helloKey != null)
+                        {
+                            Log("Successfully derived key from Windows Hello signature.");
+                        }
+                        else
+                        {
+                            Log("Windows Hello operation was canceled or failed. Proceeding without it.");
+                        }
+                    }
+                }
+
+                using (var passwordBuffer = new SecureBuffer(Encoding.UTF8.GetByteCount(passwordResult.Password)))
+                {
+                    Encoding.UTF8.GetBytes(passwordResult.Password, 0, passwordResult.Password.Length, passwordBuffer.Buffer, 0);
+                    // Pass the raw Hello-derived key to the encryption manager.
+                    await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, progress, logger, helloKey));
                     await ShowMessage("Lock successful!");
                     PathTextBox.Text = "";
                     PopulateLockedItems();
@@ -135,6 +144,7 @@ namespace FFLocker
             catch (Exception ex)
             {
                 await ShowMessage($"An error occurred: {ex.Message}");
+                Log($"[ERROR] {ex.ToString()}");
             }
             finally
             {
@@ -157,8 +167,76 @@ namespace FFLocker
                 return;
             }
 
-            var password = await GetPassword();
-            if (string.IsNullOrEmpty(password)) return;
+            bool isHelloUsed = EncryptionManager.IsHelloUsed(path);
+
+            if (isHelloUsed)
+            {
+                var result = await ShowHelloUnlockDialog();
+                if (result == ContentDialogResult.Primary) // Unlock with Hello
+                {
+                    await UnlockWithHelloAsync(path);
+                }
+                else if (result == ContentDialogResult.Secondary) // Unlock with Password
+                {
+                    await UnlockWithPasswordAsync(path);
+                }
+            }
+            else
+            {
+                await UnlockWithPasswordAsync(path);
+            }
+        }
+
+        private async Task UnlockWithHelloAsync(string path)
+        {
+            var logger = new Progress<string>(m => Log(m));
+            SetUiInteraction(false);
+            try
+            {
+                Log("Attempting to unlock with Windows Hello...");
+                var header = EncryptionManager.GetFileHeader(path);
+                if (header == null || !header.IsHelloUsed)
+                {
+                    throw new InvalidOperationException("This item was not locked with Windows Hello or the header is corrupt.");
+                }
+
+                Log("Requesting Windows Hello signature to recover the master key...");
+                var helloKey = await HelloManager.GenerateHelloDerivedKeyAsync(_hwnd);
+                if (helloKey == null)
+                {
+                    throw new Exception("Failed to unlock with Windows Hello. The operation was canceled or failed.");
+                }
+
+                // Recover the master key by XORing the protected key from the header with the new Hello-derived key.
+                var masterKeyBytes = new byte[32];
+                for (int i = 0; i < 32; i++)
+                {
+                    masterKeyBytes[i] = (byte)(header.HelloEncryptedKey[i] ^ helloKey[i]);
+                }
+
+                using var masterKeyBuffer = new SecureBuffer(32);
+                Array.Copy(masterKeyBytes, masterKeyBuffer.Buffer, 32);
+
+                await Task.Run(() => EncryptionManager.UnlockWithMasterKey(path, masterKeyBuffer, new Progress<int>(), logger));
+                await ShowMessage("Unlock successful!");
+                PathTextBox.Text = "";
+                PopulateLockedItems();
+            }
+            catch (Exception ex)
+            {
+                await ShowMessage($"An error occurred: {ex.Message}");
+                Log($"[ERROR] {ex.ToString()}");
+            }
+            finally
+            {
+                SetUiInteraction(true);
+            }
+        }
+
+        private async Task UnlockWithPasswordAsync(string path)
+        {
+            var passwordResult = await GetPassword(forUnlocking: true);
+            if (passwordResult is null || string.IsNullOrEmpty(passwordResult.Password)) return;
 
             var progress = new Progress<int>(p => { });
             var logger = new Progress<string>(m => Log(m));
@@ -166,9 +244,9 @@ namespace FFLocker
             SetUiInteraction(false);
             try
             {
-                using (var passwordBuffer = new SecureBuffer(System.Text.Encoding.UTF8.GetByteCount(password)))
+                using (var passwordBuffer = new SecureBuffer(System.Text.Encoding.UTF8.GetByteCount(passwordResult.Password)))
                 {
-                    System.Text.Encoding.UTF8.GetBytes(password, 0, password.Length, passwordBuffer.Buffer, 0);
+                    System.Text.Encoding.UTF8.GetBytes(passwordResult.Password, 0, passwordResult.Password.Length, passwordBuffer.Buffer, 0);
                     await Task.Run(() => EncryptionManager.Unlock(path, passwordBuffer, progress, logger));
                     await ShowMessage("Unlock successful!");
                     PathTextBox.Text = "";
@@ -183,6 +261,20 @@ namespace FFLocker
             {
                 SetUiInteraction(true);
             }
+        }
+
+        private async Task<ContentDialogResult> ShowHelloUnlockDialog()
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Unlock Option",
+                Content = "This item was locked with Windows Hello. How would you like to unlock it?",
+                PrimaryButtonText = "Unlock with Windows Hello",
+                SecondaryButtonText = "Unlock with Password",
+                CloseButtonText = "Cancel",
+                XamlRoot = this.Content.XamlRoot
+            };
+            return await dialog.ShowAsync();
         }
 
         private void ShowInfoCheckBox_Checked(object sender, RoutedEventArgs e)
@@ -315,7 +407,17 @@ namespace FFLocker
 
         private void Log(string message)
         {
-            LogTextBox.Text += message + Environment.NewLine;
+            if (DispatcherQueue.HasThreadAccess)
+            {
+                LogTextBox.Text += message + Environment.NewLine;
+            }
+            else
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    LogTextBox.Text += message + Environment.NewLine;
+                });
+            }
         }
 
         private void SetUiInteraction(bool isEnabled)
@@ -328,17 +430,37 @@ namespace FFLocker
             FileRadioButton.IsEnabled = isEnabled;
         }
 
-        private async Task<string?> GetPassword()
+        private async Task<GetPasswordResult?> GetPassword(bool forUnlocking = false, bool isHelloAvailable = false)
         {
             var passwordBox = new PasswordBox
             {
                 PasswordRevealMode = PasswordRevealMode.Peek
             };
 
+            var stackPanel = new StackPanel();
+            stackPanel.Children.Add(passwordBox);
+
+            var helloCheckBox = new CheckBox
+            {
+                Content = "Use Windows Hello for faster unlocking",
+                IsChecked = false,
+                Margin = new Thickness(0, 10, 0, 0)
+            };
+
+            if (forUnlocking && isHelloAvailable)
+            {
+                // Special "Unlock with Hello" button could go here
+            }
+            else if (!forUnlocking)
+            {
+                stackPanel.Children.Add(helloCheckBox);
+            }
+
+
             var dialog = new ContentDialog
             {
                 Title = "Enter Password",
-                Content = passwordBox,
+                Content = stackPanel,
                 PrimaryButtonText = "Confirm",
                 CloseButtonText = "Cancel",
                 XamlRoot = this.Content.XamlRoot,
@@ -348,9 +470,19 @@ namespace FFLocker
             var result = await dialog.ShowAsync();
             if (result == ContentDialogResult.Primary)
             {
-                return passwordBox.Password;
+                return new GetPasswordResult
+                {
+                    Password = passwordBox.Password,
+                    UseHello = helloCheckBox.IsChecked ?? false
+                };
             }
             return null;
+        }
+
+        private class GetPasswordResult
+        {
+            public string Password { get; set; } = string.Empty;
+            public bool UseHello { get; set; }
         }
 
         private void ClearLogButton_Click(object sender, RoutedEventArgs e)
@@ -419,7 +551,7 @@ namespace FFLocker
 
         private void InitializeWithWindow(object picker)
         {
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, _hwnd);
         }
     }
 }
