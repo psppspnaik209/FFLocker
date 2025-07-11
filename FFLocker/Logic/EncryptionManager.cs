@@ -85,9 +85,9 @@ namespace FFLocker.Logic
 
     public partial class EncryptionConfig
     {
-        public int ChunkSize { get; set; } = 1024 * 1024;
+        public int ChunkSize { get; set; } = 4 * 1024 * 1024;
         public int MaxParallelism { get; set; } = Environment.ProcessorCount;
-        public int BufferSize { get; set; } = 1024 * 1024;
+        public int BufferSize { get; set; } = 4 * 1024 * 1024;
         public int SecureRandomLength { get; set; } = 32;
         public int Argon2Iterations { get; set; } = 4;
         public int Argon2MemorySize { get; set; } = 65536; // 64 MB
@@ -225,6 +225,7 @@ namespace FFLocker.Logic
     {
         private const int NONCE_SIZE = 12;
         private const int TAG_SIZE = 16;
+        private static readonly byte[] MagicFooter = { 0x45, 0x4E, 0x44, 0x46, 0x46, 0x4C, 0x4F, 0x43, 0x4B }; // ENDFFLOCK
         private static readonly EncryptionConfig Config = new();
 
         public static bool IsLocked(string path)
@@ -297,19 +298,47 @@ namespace FFLocker.Logic
 
             var processedFiles = 0;
             var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism };
+            var encryptedFilePaths = new ConcurrentBag<(string, string, string)>();
+            var exceptionOccurred = false;
 
             logger.Report($"Starting encryption with up to {Config.MaxParallelism} parallel tasks...");
 
-            Parallel.ForEach(fileInfos, parallelOptions, fileInfo =>
+            try
             {
-                EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger);
-                var processed = Interlocked.Increment(ref processedFiles);
-                var percentage = (int)((double)processed / fileInfos.Count * 100);
-                progress.Report(percentage);
-                logger.Report($"Encrypted: {fileInfo.RelPath} ({FormatSize(fileInfo.Size)}) - Progress: {processed}/{fileInfos.Count}");
-            });
+                Parallel.ForEach(fileInfos, parallelOptions, (fileInfo, loopState) =>
+                {
+                    var paths = EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger);
+                    encryptedFilePaths.Add(paths);
+                    var processed = Interlocked.Increment(ref processedFiles);
+                    var percentage = (int)((double)processed / fileInfos.Count * 100);
+                    progress.Report(percentage);
+                    logger.Report($"Encrypted: {fileInfo.RelPath} ({FormatSize(fileInfo.Size)}) - Progress: {processed}/{fileInfos.Count}");
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.Report($"[ERROR] An exception occurred during encryption: {ex.Message}");
+                exceptionOccurred = true;
+            }
 
-            logger.Report("All files encrypted. Renaming directories...");
+            if (exceptionOccurred)
+            {
+                logger.Report("An error occurred. Rolling back changes...");
+                foreach(var (_, tempPath, _) in encryptedFilePaths)
+                {
+                    try { File.Delete(tempPath); } catch { }
+                }
+                throw new Exception("Encryption failed and was rolled back.");
+            }
+
+            logger.Report("All files encrypted. Committing changes...");
+            foreach(var (originalPath, tempPath, finalPath) in encryptedFilePaths)
+            {
+                File.Move(tempPath, finalPath, true);
+                SecureDeleteFile(originalPath);
+            }
+
+            logger.Report("Renaming directories...");
             var dirRelPaths = Directory.GetDirectories(root, "*", SearchOption.AllDirectories)
                 .Select(d => Path.GetRelativePath(root, d)).OrderByDescending(r => r.Length).ToList();
 
@@ -384,19 +413,51 @@ namespace FFLocker.Logic
 
             logger.Report($"Decrypting {fileMappings.Count} files with up to {Config.MaxParallelism} parallel tasks...");
             var processedFiles = 0;
+            var decryptedFilePaths = new ConcurrentBag<(string, string)>();
+            var exceptionOccurred = false;
 
-            Parallel.ForEach(fileMappings, new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism }, mapping =>
+            try
             {
-                logger.Report($"Decrypting: {Path.GetFileName(mapping.Value)}");
-                DecryptFile(mapping.Key, mapping.Value, masterKeyBuffer.Buffer, logger);
+                Parallel.ForEach(fileMappings, new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism }, mapping =>
+                {
+                    logger.Report($"Decrypting: {Path.GetFileName(mapping.Value)}");
+                    var paths = DecryptFile(mapping.Key, mapping.Value, masterKeyBuffer.Buffer, logger);
+                    decryptedFilePaths.Add(paths);
 
-                var processed = Interlocked.Increment(ref processedFiles);
-                var percentage = (int)((double)processed / fileMappings.Count * 100);
-                progress.Report(percentage);
-                logger.Report($"Decrypted: {Path.GetFileName(mapping.Value)} - Progress: {processed}/{fileMappings.Count}");
-            });
+                    var processed = Interlocked.Increment(ref processedFiles);
+                    var percentage = (int)((double)processed / fileMappings.Count * 100);
+                    progress.Report(percentage);
+                    logger.Report($"Decrypted: {Path.GetFileName(mapping.Value)} - Progress: {processed}/{fileMappings.Count}");
+                });
+            }
+            catch(Exception ex)
+            {
+                logger.Report($"[ERROR] An exception occurred during decryption: {ex.Message}");
+                exceptionOccurred = true;
+            }
 
-            logger.Report("All files decrypted. Cleaning up...");
+            if(exceptionOccurred)
+            {
+                logger.Report("An error occurred. Rolling back changes...");
+                foreach(var (tempPath, _) in decryptedFilePaths)
+                {
+                    try { File.Delete(tempPath); } catch { }
+                }
+                throw new Exception("Decryption failed and was rolled back.");
+            }
+
+            logger.Report("All files decrypted. Committing changes...");
+            foreach(var (tempPath, finalPath) in decryptedFilePaths)
+            {
+                File.Move(tempPath, finalPath, true);
+            }
+            foreach(var encFile in encryptedFiles)
+            {
+                SecureDeleteFile(encFile);
+            }
+
+
+            logger.Report("Cleaning up...");
             LockedItemsDatabase.Remove(root);
 
             sw.Stop();
@@ -436,14 +497,19 @@ namespace FFLocker.Logic
             CryptographicOperations.ZeroMemory(derivedKey);
 
             logger.Report($"Encrypting file: {relPath} ({FormatSize(new FileInfo(filePath).Length)})");
-            var obfPath = EncryptFile(root, relPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger);
+            
+            var (originalPath, tempPath, finalPath) = EncryptFile(root, relPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger);
+            
+            File.Move(tempPath, finalPath, true);
+            SecureDeleteFile(originalPath);
+
             progress.Report(100);
 
             sw.Stop();
-            var encryptionRate = new FileInfo(obfPath).Length / (1024 * 1024.0) / sw.Elapsed.TotalSeconds;
+            var encryptionRate = new FileInfo(finalPath).Length / (1024 * 1024.0) / sw.Elapsed.TotalSeconds;
             logger.Report($"File secured in {sw.Elapsed.TotalSeconds:F2}s - Rate: {encryptionRate:F1} MB/s");
 
-            return obfPath;
+            return finalPath;
         }
 
         public static void UnlockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
@@ -464,7 +530,11 @@ namespace FFLocker.Logic
             var realPath = Path.Combine(Path.GetDirectoryName(filePath)!, originalPath);
 
             logger.Report($"Decrypting file: {originalPath}");
-            DecryptFile(filePath, realPath, masterKeyBuffer.Buffer, logger);
+            var (tempPath, finalPath) = DecryptFile(filePath, realPath, masterKeyBuffer.Buffer, logger);
+            
+            File.Move(tempPath, finalPath, true);
+            SecureDeleteFile(filePath);
+            
             progress.Report(100);
 
             LockedItemsDatabase.Remove(realPath);
@@ -473,7 +543,7 @@ namespace FFLocker.Logic
             logger.Report($"File unlocked in {sw.Elapsed.TotalSeconds:F2}s");
         }
 
-        static string EncryptFile(string root, string relPath, byte[] masterKey, byte[] globalSalt, SecureCrypto crypto, IProgress<string> logger)
+        static (string, string, string) EncryptFile(string root, string relPath, byte[] masterKey, byte[] globalSalt, SecureCrypto crypto, IProgress<string> logger)
         {
             string inputPath = Path.Combine(root, relPath);
             string obfName = crypto.GenerateSecureFilename(Config.SecureRandomLength) + ".ffl";
@@ -510,20 +580,16 @@ namespace FFLocker.Logic
 
                 EncryptFileStream(inputPath, tempPath, fileKeyBuffer.Buffer, crypto, header);
 
-                File.Move(tempPath, outputPath, true);
-                SecureDeleteFile(inputPath);
-
-                return outputPath;
+                return (inputPath, tempPath, outputPath);
             }
             catch
             {
                 try { File.Delete(tempPath); } catch { }
-                try { File.Delete(outputPath); } catch { }
                 throw;
             }
         }
 
-        static void DecryptFile(string encPath, string realPath, byte[] masterKey, IProgress<string> logger)
+        static (string, string) DecryptFile(string encPath, string realPath, byte[] masterKey, IProgress<string> logger)
         {
             string tempPath = realPath + ".tmp";
 
@@ -540,8 +606,7 @@ namespace FFLocker.Logic
                 DecryptFileStream(fs, tempPath, fileKeyBuffer.Buffer, header.OriginalFileLength);
                 fs.Close();
 
-                File.Move(tempPath, realPath, true);
-                SecureDeleteFile(encPath);
+                return (tempPath, realPath);
             }
             catch
             {
@@ -579,6 +644,8 @@ namespace FFLocker.Logic
                 outputStream.Write(ciphertext, 0, ciphertext.Length);
                 outputStream.Write(tag, 0, tag.Length);
             }
+
+            outputStream.Write(MagicFooter, 0, MagicFooter.Length);
         }
 
         static void DecryptFileStream(Stream inputStream, string realPath, byte[] key, long originalFileSize)
@@ -586,7 +653,7 @@ namespace FFLocker.Logic
             using var outputStream = new FileStream(realPath, FileMode.Create, FileAccess.Write, FileShare.None, Config.BufferSize);
             long totalWritten = 0;
 
-            while (inputStream.Position < inputStream.Length)
+            while (totalWritten < originalFileSize)
             {
                 var chunkNonce = new byte[NONCE_SIZE];
                 inputStream.Read(chunkNonce, 0, NONCE_SIZE);
@@ -613,6 +680,13 @@ namespace FFLocker.Logic
                 outputStream.Write(plaintext, 0, bytesToWrite);
 
                 totalWritten += bytesToWrite;
+            }
+
+            var footerBuffer = new byte[MagicFooter.Length];
+            inputStream.Read(footerBuffer, 0, footerBuffer.Length);
+            if (!footerBuffer.SequenceEqual(MagicFooter))
+            {
+                throw new InvalidDataException("File is corrupt or truncated. Footer is invalid.");
             }
         }
 
