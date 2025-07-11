@@ -108,7 +108,7 @@ namespace FFLocker
                 return;
             }
 
-            if (DualMetadataManager.IsLocked(path))
+            if (EncryptionManager.IsLocked(path))
             {
                 await ShowMessage("The selected file or folder is already locked.");
                 return;
@@ -120,6 +120,7 @@ namespace FFLocker
             var progress = new Progress<int>(p => { });
             var logger = new Progress<string>(m => Log(m));
 
+            SetUiInteraction(false);
             try
             {
                 using (var passwordBuffer = new SecureBuffer(System.Text.Encoding.UTF8.GetByteCount(password)))
@@ -135,6 +136,10 @@ namespace FFLocker
             {
                 await ShowMessage($"An error occurred: {ex.Message}");
             }
+            finally
+            {
+                SetUiInteraction(true);
+            }
         }
 
         private async void UnlockButton_Click(object sender, RoutedEventArgs e)
@@ -146,7 +151,7 @@ namespace FFLocker
                 return;
             }
 
-            if (!DualMetadataManager.IsLocked(path))
+            if (!EncryptionManager.IsLocked(path))
             {
                 await ShowMessage("The selected file or folder is not locked.");
                 return;
@@ -158,6 +163,7 @@ namespace FFLocker
             var progress = new Progress<int>(p => { });
             var logger = new Progress<string>(m => Log(m));
 
+            SetUiInteraction(false);
             try
             {
                 using (var passwordBuffer = new SecureBuffer(System.Text.Encoding.UTF8.GetByteCount(password)))
@@ -172,6 +178,10 @@ namespace FFLocker
             catch (Exception ex)
             {
                 await ShowMessage($"An error occurred: {ex.Message}");
+            }
+            finally
+            {
+                SetUiInteraction(true);
             }
         }
 
@@ -306,6 +316,16 @@ namespace FFLocker
         private void Log(string message)
         {
             LogTextBox.Text += message + Environment.NewLine;
+        }
+
+        private void SetUiInteraction(bool isEnabled)
+        {
+            BrowseButton.IsEnabled = isEnabled;
+            LockButton.IsEnabled = isEnabled;
+            UnlockButton.IsEnabled = isEnabled;
+            PathTextBox.IsEnabled = isEnabled;
+            FolderRadioButton.IsEnabled = isEnabled;
+            FileRadioButton.IsEnabled = isEnabled;
         }
 
         private async Task<string?> GetPassword()
