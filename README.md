@@ -6,17 +6,18 @@ FFLocker is a modern Windows application built with WinUI 3 that provides strong
 
 *   **Strong Encryption:** Uses **AES-256-GCM** for authenticated encryption, ensuring both the confidentiality and integrity of your data.
 *   **Robust Key Derivation:** Implements **Argon2id**, the winner of the Password Hashing Competition, to derive a strong encryption key from your password, providing excellent resistance against modern cracking hardware.
-*   **Self-Contained Files:** Each encrypted file (`.ffl`) is a portable, self-contained vault. All the necessary metadata is embedded within the file's header, so you can move a single encrypted file to another machine and decrypt it with just the password.
+*   **Windows Hello Integration:** Optionally protect your data with Windows Hello (fingerprint, face, PIN). This provides a convenient and secure way to unlock your files without re-entering your password.
+*   **Self-Contained Files:** Each encrypted file (`.ffl`) is a portable, self-contained vault. All the necessary metadata is embedded within the file's header, so you can move a single encrypted file to another machine and decrypt it with just the password (and Windows Hello, if used).
 *   **Fail-Safe Operations:** FFLocker uses a transactional approach for file operations. It encrypts to temporary files first and only commits the changes (deleting originals) after a successful run. This prevents data loss or corruption if the process is interrupted.
 *   **Privacy-Focused Folder Encryption:** When a folder is locked, the original directory structure is obscured. All files are encrypted and stored in the root of the locked folder, preventing attackers from inferring information from the folder hierarchy.
 *   **Modern UI:** A clean and intuitive user interface built with WinUI 3, featuring Light and Dark mode support and a detailed log view.
-*   **Windows Integration:** Optionally integrate FFLocker into the Windows context menu for quick lock/unlock operations.
+*   **Windows Context Menu:** Optionally integrate FFLocker into the Windows context menu for quick lock/unlock operations.
 
 ## Getting Started
 
 ### Prerequisites
 
-*   **Windows** operating system.
+*   **Windows 10/11** operating system.
 *   **.NET 8 SDK** or later.
 *   **Visual Studio 2022** with the **.NET Multi-platform App UI development** workload installed.
 
@@ -46,7 +47,9 @@ FFLocker is a modern Windows application built with WinUI 3 that provides strong
 *   **Locking and Unlocking:**
     1.  Click the "Lock" or "Unlock" button.
     2.  A dialog will appear prompting you for a password. Enter your password and click "Confirm".
-    3.  When locking a folder, its name will be changed to `FolderName_USE_FOR_FOLDER_UNLOCK_DO_NOT_DELETE`. To unlock it, simply select this renamed folder.
+    3.  **Windows Hello:** When locking, you can check the "Use Windows Hello" box to link the encryption to your device's biometrics or PIN for faster unlocking.
+    4.  When unlocking an item protected with Windows Hello, you will be given the choice to unlock with Hello or your password.
+    5.  When locking a folder, its name will be changed to `FolderName_USE_FOR_FOLDER_UNLOCK_DO_NOT_DELETE`. To unlock it, simply select this renamed folder.
 *   **Options:**
     *   **Dark/Light Mode:** Use the toggle switch to change the application theme.
     *   **Log:** See detailed logs of the application's operations.
@@ -63,7 +66,7 @@ For convenience, you can integrate FFLocker directly into the Windows right-clic
     1.  Right-click on any file or folder.
     2.  Go to the "FFLocker" sub-menu.
     3.  Click "Lock" or "Unlock."
-    4.  A dialog will open, prompting you for your password.
+    4.  A dialog will open, prompting you for your password or Windows Hello.
 
 ## Security Model & User Advice
 
@@ -71,12 +74,13 @@ For convenience, you can integrate FFLocker directly into the Windows right-clic
 
 The security of your locked files depends entirely on the strength of your password. 
 *   **There is absolutely no password recovery.** If you forget your password, your data will be permanently inaccessible.
+*   If you use Windows Hello, the password still serves as the ultimate backup. If you move the files to a new computer or your Windows Hello configuration is lost, you will need the password to decrypt your data (This is a feature).
 *   Use a long, complex, and unique password that you will not forget.
 
 ### Threat Model
 
 *   **FFLocker Protects Against:** Unauthorized access to your files on a stolen or compromised computer (offline attacks). If someone steals your laptop or hard drive, they will not be able to access the contents of your `.ffl` files without the password.
-*   **FFLocker Does NOT Protect Against:** Active malware on a running system. If your computer is infected with a keylogger or screen recorder, it could capture your password as you type it. Always ensure your system is secure before handling sensitive data.
+*   **FFLocker Does NOT Protect Against:** Active malware on a running system. If your computer is infected with a keylogger or screen recorder, it could capture your password as you type it. Data recovery and analysis tools can still recover and reconstruct files on your drive. Always ensure your system is secure before handling sensitive data.
 
 ### Best Practices
 

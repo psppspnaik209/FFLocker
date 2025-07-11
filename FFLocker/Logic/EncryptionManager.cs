@@ -266,17 +266,31 @@ namespace FFLocker.Logic
 
         public static bool IsHelloUsed(string path)
         {
-            if (!File.Exists(path)) return false;
-            try
+            if (File.Exists(path) && path.EndsWith(".ffl", StringComparison.OrdinalIgnoreCase))
             {
-                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
-                var header = FileHeader.ReadFrom(fs);
-                return header.IsHelloUsed;
+                try
+                {
+                    using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
+                    var header = FileHeader.ReadFrom(fs);
+                    return header.IsHelloUsed;
+                }
+                catch
+                {
+                    return false;
+                }
             }
-            catch
+            
+            if (Directory.Exists(path))
             {
-                return false;
+                var firstFile = Directory.EnumerateFiles(path, "*.ffl").FirstOrDefault();
+                if (firstFile != null)
+                {
+                    // Recursively call to check the header of the first file found.
+                    return IsHelloUsed(firstFile);
+                }
             }
+
+            return false;
         }
 
         public static FileHeader? GetFileHeader(string path)
@@ -318,8 +332,7 @@ namespace FFLocker.Logic
             }
             else if (Directory.Exists(path))
             {
-                // For folders, the existing UnlockFolder method already uses the master key correctly.
-                UnlockFolder(path, masterKey, progress, logger);
+                UnlockFolderCore(path, masterKey, progress, logger);
             }
         }
 
@@ -450,7 +463,7 @@ namespace FFLocker.Logic
             }
         }
 
-        public static void UnlockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
+        private static void UnlockFolderCore(string root, SecureBuffer masterKey, IProgress<int> progress, IProgress<string> logger)
         {
             var sw = Stopwatch.StartNew();
             var encryptedFiles = Directory.GetFiles(root, "*.ffl");
@@ -460,28 +473,14 @@ namespace FFLocker.Logic
                 return;
             }
 
-            byte[]? globalSalt = null;
             var fileMappings = new ConcurrentDictionary<string, string>();
-
-            // First pass: Read headers to get global salt and paths
-            using (var fs = new FileStream(encryptedFiles[0], FileMode.Open, FileAccess.Read))
-            {
-                var header = FileHeader.ReadFrom(fs);
-                globalSalt = header.GlobalSalt;
-            }
-
-            using var masterKeyBuffer = new SecureBuffer(32);
-            using var keyDerivation = new KeyDerivation();
-            var derivedKey = keyDerivation.DeriveKey(password.Buffer, globalSalt, 32);
-            Array.Copy(derivedKey, masterKeyBuffer.Buffer, 32);
-            CryptographicOperations.ZeroMemory(derivedKey);
 
             logger.Report("Reading file headers...");
             foreach (var file in encryptedFiles)
             {
                 using var fs = new FileStream(file, FileMode.Open, FileAccess.Read);
                 var header = FileHeader.ReadFrom(fs);
-                var originalPath = DecryptPathFromHeader(header, masterKeyBuffer.Buffer);
+                var originalPath = DecryptPathFromHeader(header, masterKey.Buffer);
                 fileMappings[file] = Path.Combine(root, originalPath);
             }
 
@@ -501,7 +500,7 @@ namespace FFLocker.Logic
             {
                 Parallel.ForEach(fileMappings, new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism }, mapping =>
                 {
-                    var paths = DecryptFile(mapping.Key, mapping.Value, masterKeyBuffer.Buffer, logger);
+                    var paths = DecryptFile(mapping.Key, mapping.Value, masterKey.Buffer, logger);
                     decryptedFilePaths.Add(paths);
 
                     var processed = Interlocked.Increment(ref processedFiles);
@@ -555,6 +554,31 @@ namespace FFLocker.Logic
                     logger.Report($"Warning: Could not rename the unlocked folder back to its original name. Error: {ex.Message}");
                 }
             }
+        }
+        
+        public static void UnlockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
+        {
+            var encryptedFiles = Directory.GetFiles(root, "*.ffl");
+            if (encryptedFiles.Length == 0)
+            {
+                logger.Report("No encrypted files found to unlock.");
+                return;
+            }
+
+            byte[]? globalSalt;
+            using (var fs = new FileStream(encryptedFiles[0], FileMode.Open, FileAccess.Read))
+            {
+                var header = FileHeader.ReadFrom(fs);
+                globalSalt = header.GlobalSalt;
+            }
+
+            using var masterKeyBuffer = new SecureBuffer(32);
+            using var keyDerivation = new KeyDerivation();
+            var derivedKey = keyDerivation.DeriveKey(password.Buffer, globalSalt, 32);
+            Array.Copy(derivedKey, masterKeyBuffer.Buffer, 32);
+            CryptographicOperations.ZeroMemory(derivedKey);
+
+            UnlockFolderCore(root, masterKeyBuffer, progress, logger);
         }
 
         public static string LockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, byte[]? helloEncryptedKey = null)

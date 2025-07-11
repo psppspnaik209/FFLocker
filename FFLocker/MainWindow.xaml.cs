@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Security.Cryptography;
@@ -100,7 +101,13 @@ namespace FFLocker
             }
 
             var passwordResult = await GetPassword();
-            if (passwordResult is null || string.IsNullOrEmpty(passwordResult.Password)) return;
+            if (passwordResult is null) return; // User canceled
+
+            if (string.IsNullOrEmpty(passwordResult.Password))
+            {
+                await ShowMessage("A password is required.");
+                return;
+            }
 
             var progress = new Progress<int>(p => { });
             var logger = new Progress<string>(m => Log(m));
@@ -194,7 +201,23 @@ namespace FFLocker
             try
             {
                 Log("Attempting to unlock with Windows Hello...");
-                var header = EncryptionManager.GetFileHeader(path);
+
+                string? headerFilePath = null;
+                if (Directory.Exists(path))
+                {
+                    headerFilePath = Directory.EnumerateFiles(path, "*.ffl").FirstOrDefault();
+                }
+                else if (File.Exists(path))
+                {
+                    headerFilePath = path;
+                }
+
+                if (string.IsNullOrEmpty(headerFilePath))
+                {
+                    throw new InvalidOperationException("No encrypted files found to unlock.");
+                }
+        
+                var header = EncryptionManager.GetFileHeader(headerFilePath);
                 if (header == null || !header.IsHelloUsed)
                 {
                     throw new InvalidOperationException("This item was not locked with Windows Hello or the header is corrupt.");
