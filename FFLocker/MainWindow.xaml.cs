@@ -18,6 +18,8 @@ namespace FFLocker
     {
         private Logic.AppSettings _settings = new Logic.AppSettings();
         private IntPtr _hwnd;
+        private bool _isLockedItemsViewAuthenticated = false;
+        private bool _isWindowInitialized = false;
 
         public MainWindow()
         {
@@ -47,6 +49,7 @@ namespace FFLocker
             
             LoadSettings();
             ApplyTheme();
+            _isWindowInitialized = true;
         }
 
         private async void BrowseButton_Click(object sender, RoutedEventArgs e)
@@ -145,7 +148,7 @@ namespace FFLocker
                     await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, progress, logger, helloKey));
                     await ShowMessage("Lock successful!");
                     PathTextBox.Text = "";
-                    PopulateLockedItems();
+                    if (LockedItemsPanel.Visibility == Visibility.Visible) PopulateLockedItems();
                 }
             }
             catch (Exception ex)
@@ -243,7 +246,7 @@ namespace FFLocker
                 await Task.Run(() => EncryptionManager.UnlockWithMasterKey(path, masterKeyBuffer, new Progress<int>(), logger));
                 await ShowMessage("Unlock successful!");
                 PathTextBox.Text = "";
-                PopulateLockedItems();
+                if (LockedItemsPanel.Visibility == Visibility.Visible) PopulateLockedItems();
             }
             catch (Exception ex)
             {
@@ -273,7 +276,7 @@ namespace FFLocker
                     await Task.Run(() => EncryptionManager.Unlock(path, passwordBuffer, progress, logger));
                     await ShowMessage("Unlock successful!");
                     PathTextBox.Text = "";
-                    PopulateLockedItems();
+                    if (LockedItemsPanel.Visibility == Visibility.Visible) PopulateLockedItems();
                 }
             }
             catch (Exception ex)
@@ -321,7 +324,18 @@ namespace FFLocker
             {
                 LockedItemsPanel.Visibility = Visibility.Visible;
                 ShowLockedButton.Content = "Hide Locked Items";
-                PopulateLockedItems();
+
+                // If the current selection is not already "Locked Paths", change it.
+                // This will trigger the SelectionChanged event, which populates the list.
+                if (LockedItemsViewComboBox.SelectedIndex != 1)
+                {
+                    LockedItemsViewComboBox.SelectedIndex = 1;
+                }
+                else
+                {
+                    // If it's already "Locked Paths", the event won't fire, so populate manually.
+                    PopulateLockedItems();
+                }
             }
         }
 
@@ -404,10 +418,16 @@ namespace FFLocker
         {
             if (LockedItemsListView == null || LockedItemsViewComboBox == null) return;
 
-            LockedItemsDatabase.Reload();
             LockedItemsListView.Items.Clear();
             var lockedItems = LockedItemsDatabase.GetLockedItems();
             var showOriginalNames = LockedItemsViewComboBox.SelectedIndex == 0;
+
+            // If we are showing original names but are not authenticated, clear the list and exit.
+            if (showOriginalNames && !_isLockedItemsViewAuthenticated)
+            {
+                LockedItemsListView.Items.Clear();
+                return;
+            }
 
             foreach (var item in lockedItems)
             {
@@ -423,9 +443,38 @@ namespace FFLocker
             }
         }
 
-        private void LockedItemsViewComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void LockedItemsViewComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            PopulateLockedItems();
+            if (!_isWindowInitialized) return;
+
+            var comboBox = sender as ComboBox;
+            if (comboBox == null) return;
+
+            // If the user wants to see original paths and is not yet authenticated
+            if (comboBox.SelectedIndex == 0 && !_isLockedItemsViewAuthenticated)
+            {
+                Log("Windows Hello authentication required to view original paths.");
+                var helloKey = await HelloManager.GenerateHelloDerivedKeyAsync(_hwnd);
+
+                if (helloKey != null)
+                {
+                    _isLockedItemsViewAuthenticated = true;
+                    Log("Authentication successful.");
+                    PopulateLockedItems();
+                }
+                else
+                {
+                    Log("Authentication failed or was canceled.");
+                    await ShowMessage("Authentication is required to view original paths.");
+                    // Revert the selection back to "Locked Paths"
+                    comboBox.SelectedIndex = 1;
+                }
+            }
+            else
+            {
+                // If the user is already authenticated or is switching to "Locked Paths", just update the list.
+                PopulateLockedItems();
+            }
         }
 
         private void Log(string message)
