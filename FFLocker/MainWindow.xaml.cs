@@ -315,11 +315,15 @@ namespace FFLocker
         private void ShowInfoCheckBox_Checked(object sender, RoutedEventArgs e)
         {
             LogGrid.Visibility = Visibility.Visible;
+            _settings.IsLogVisible = true;
+            SaveSettings();
         }
 
         private void ShowInfoCheckBox_Unchecked(object sender, RoutedEventArgs e)
         {
             LogGrid.Visibility = Visibility.Collapsed;
+            _settings.IsLogVisible = false;
+            SaveSettings();
         }
 
         private void ShowLockedButton_Click(object sender, RoutedEventArgs e)
@@ -610,21 +614,31 @@ namespace FFLocker
                     _settings = System.Text.Json.JsonSerializer.Deserialize<Logic.AppSettings>(json) ?? new Logic.AppSettings();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log($"[ERROR] Failed to load settings: {ex.Message}");
+            }
 
             ThemeComboBox.SelectedIndex = (int)_settings.Theme;
             ContextMenuCheckBox.IsChecked = RegistryManager.IsContextMenuEnabled();
+            ShowInfoCheckBox.IsChecked = _settings.IsLogVisible;
+            LogGrid.Visibility = _settings.IsLogVisible ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void SaveSettings()
         {
+            if (!_isWindowInitialized) return;
+
             try
             {
                 var settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
                 var json = System.Text.Json.JsonSerializer.Serialize(_settings);
                 File.WriteAllText(settingsPath, json);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log($"[ERROR] Failed to save settings: {ex.Message}");
+            }
         }
 
         private void ApplyTheme()
