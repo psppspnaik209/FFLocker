@@ -65,7 +65,7 @@ namespace FFLocker.Logic
             var header = new FileHeader();
 
             byte[] buffer = new byte[8];
-            stream.Read(buffer, 0, 8);
+            stream.ReadExactly(buffer, 0, 8);
             if (!buffer.SequenceEqual(MagicBytes))
                 throw new InvalidDataException("Not a valid FFLocker file.");
 
@@ -73,33 +73,33 @@ namespace FFLocker.Logic
             if (version != Version)
                 throw new InvalidDataException($"Unsupported version: {version}");
 
-            stream.Read(header.GlobalSalt, 0, 32);
-            stream.Read(header.FileSalt, 0, 32);
-            stream.Read(header.PathNonce, 0, 12);
+            stream.ReadExactly(header.GlobalSalt, 0, 32);
+            stream.ReadExactly(header.FileSalt, 0, 32);
+            stream.ReadExactly(header.PathNonce, 0, 12);
 
             buffer = new byte[2];
-            stream.Read(buffer, 0, 2);
+            stream.ReadExactly(buffer, 0, 2);
             header.PathLength = BitConverter.ToUInt16(buffer, 0);
 
             header.EncryptedPath = new byte[header.PathLength];
-            stream.Read(header.EncryptedPath, 0, header.PathLength);
+            stream.ReadExactly(header.EncryptedPath, 0, header.PathLength);
 
             header.PathEncryptionTag = new byte[16];
-            stream.Read(header.PathEncryptionTag, 0, 16);
+            stream.ReadExactly(header.PathEncryptionTag, 0, 16);
 
             buffer = new byte[8];
-            stream.Read(buffer, 0, 8);
+            stream.ReadExactly(buffer, 0, 8);
             header.OriginalFileLength = BitConverter.ToInt64(buffer, 0);
 
             header.IsHelloUsed = stream.ReadByte() == 1;
             if (header.IsHelloUsed)
             {
                 buffer = new byte[2];
-                stream.Read(buffer, 0, 2);
+                stream.ReadExactly(buffer, 0, 2);
                 header.HelloEncryptedKeyLength = BitConverter.ToUInt16(buffer, 0);
 
                 header.HelloEncryptedKey = new byte[header.HelloEncryptedKeyLength];
-                stream.Read(header.HelloEncryptedKey, 0, header.HelloEncryptedKey.Length);
+                stream.ReadExactly(header.HelloEncryptedKey, 0, header.HelloEncryptedKey.Length);
             }
 
             return header;
@@ -772,17 +772,17 @@ namespace FFLocker.Logic
             while (totalWritten < originalFileSize)
             {
                 var chunkNonce = new byte[NONCE_SIZE];
-                inputStream.Read(chunkNonce, 0, NONCE_SIZE);
+                inputStream.ReadExactly(chunkNonce, 0, NONCE_SIZE);
 
                 var sizeBuffer = new byte[sizeof(int)];
-                inputStream.Read(sizeBuffer, 0, sizeof(int));
+                inputStream.ReadExactly(sizeBuffer, 0, sizeof(int));
                 int chunkSize = BitConverter.ToInt32(sizeBuffer, 0);
 
                 var ciphertext = new byte[chunkSize];
-                inputStream.Read(ciphertext, 0, chunkSize);
+                inputStream.ReadExactly(ciphertext, 0, chunkSize);
 
                 var tag = new byte[TAG_SIZE];
-                inputStream.Read(tag, 0, TAG_SIZE);
+                inputStream.ReadExactly(tag, 0, TAG_SIZE);
 
                 var plaintext = new byte[chunkSize];
 
@@ -799,7 +799,7 @@ namespace FFLocker.Logic
             }
 
             var footerBuffer = new byte[MagicFooter.Length];
-            inputStream.Read(footerBuffer, 0, footerBuffer.Length);
+            inputStream.ReadExactly(footerBuffer, 0, footerBuffer.Length);
             if (!footerBuffer.SequenceEqual(MagicFooter))
             {
                 throw new InvalidDataException("File is corrupt or truncated. Footer is invalid.");

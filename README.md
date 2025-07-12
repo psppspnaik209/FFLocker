@@ -18,7 +18,7 @@ FFLocker is a modern Windows application built with WinUI 3 that provides strong
 ### Prerequisites
 
 *   **Windows 10/11** operating system.
-*   **.NET 8 SDK** or later.
+*   **.NET 9 SDK** or later.
 *   **Visual Studio 2022** with the **.NET Multi-platform App UI development** workload installed.
 
 ### Installation & Building
