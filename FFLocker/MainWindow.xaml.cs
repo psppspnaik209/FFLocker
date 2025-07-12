@@ -356,7 +356,7 @@ namespace FFLocker
 
         private async void ContextMenuCheckBox_Checked(object sender, RoutedEventArgs e)
         {
-            if (_isHandlingContextMenuCheck) return;
+            if (!_isWindowInitialized || _isHandlingContextMenuCheck) return;
             _isHandlingContextMenuCheck = true;
 
             if (RegistryManager.IsAdmin())
@@ -374,7 +374,7 @@ namespace FFLocker
 
         private async void ContextMenuCheckBox_Unchecked(object sender, RoutedEventArgs e)
         {
-            if (_isHandlingContextMenuCheck) return;
+            if (!_isWindowInitialized || _isHandlingContextMenuCheck) return;
             _isHandlingContextMenuCheck = true;
 
             if (RegistryManager.IsAdmin())
