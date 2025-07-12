@@ -494,12 +494,28 @@ namespace FFLocker
 
         private void SetUiInteraction(bool isEnabled)
         {
+            // Main action controls
             BrowseButton.IsEnabled = isEnabled;
             LockButton.IsEnabled = isEnabled;
             UnlockButton.IsEnabled = isEnabled;
             PathTextBox.IsEnabled = isEnabled;
             FolderRadioButton.IsEnabled = isEnabled;
             FileRadioButton.IsEnabled = isEnabled;
+
+            // Locked items panel controls
+            ShowLockedButton.IsEnabled = isEnabled;
+            LockedItemsViewComboBox.IsEnabled = isEnabled;
+            LockedItemsListView.IsEnabled = isEnabled;
+            UseThisButton.IsEnabled = isEnabled;
+
+            // Bottom bar controls
+            ShowInfoCheckBox.IsEnabled = isEnabled;
+            ContextMenuCheckBox.IsEnabled = isEnabled;
+            ThemeComboBox.IsEnabled = isEnabled;
+            AboutButton.IsEnabled = isEnabled;
+
+            // The clear button should also be disabled during an operation
+            ClearLogButton.IsEnabled = isEnabled;
         }
 
         private async Task<GetPasswordResult?> GetPassword(bool forUnlocking = false, bool isHelloAvailable = false)
