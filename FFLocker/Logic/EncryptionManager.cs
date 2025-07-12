@@ -388,7 +388,7 @@ namespace FFLocker.Logic
             var processedFiles = 0;
             var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism };
             var encryptedFilePaths = new ConcurrentBag<(string, string, string)>();
-            var exceptionOccurred = false;
+            var firstException = new ConcurrentQueue<Exception>();
 
             logger.Report($"Starting encryption with up to {Config.MaxParallelism} parallel tasks...");
 
@@ -396,27 +396,38 @@ namespace FFLocker.Logic
             {
                 Parallel.ForEach(fileInfos, parallelOptions, (fileInfo, loopState) =>
                 {
-                    var paths = EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger, helloEncryptedKey != null, helloEncryptedKey);
-                    encryptedFilePaths.Add(paths);
-                    var processed = Interlocked.Increment(ref processedFiles);
-                    var percentage = (int)((double)processed / fileInfos.Count * 100);
-                    progress.Report(percentage);
+                    try
+                    {
+                        if (loopState.IsStopped) return;
+
+                        var paths = EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger, helloEncryptedKey != null, helloEncryptedKey);
+                        encryptedFilePaths.Add(paths);
+                        var processed = Interlocked.Increment(ref processedFiles);
+                        var percentage = (int)((double)processed / fileInfos.Count * 100);
+                        progress.Report(percentage);
+                    }
+                    catch (Exception ex)
+                    {
+                        firstException.Enqueue(ex);
+                        loopState.Stop();
+                    }
                 });
             }
             catch (Exception ex)
             {
-                logger.Report($"[ERROR] An exception occurred during encryption: {ex.Message}");
-                exceptionOccurred = true;
+                // This will catch exceptions from the setup phase, not from the parallel loop itself.
+                firstException.Enqueue(ex);
             }
 
-            if (exceptionOccurred)
+            if (!firstException.IsEmpty)
             {
+                logger.Report($"[ERROR] An exception occurred during encryption: {firstException.First().Message}");
                 logger.Report("An error occurred. Rolling back changes...");
                 foreach(var (_, tempPath, _) in encryptedFilePaths)
                 {
                     try { File.Delete(tempPath); } catch { }
                 }
-                throw new Exception("Encryption failed and was rolled back.");
+                throw new Exception("Encryption failed and was rolled back.", firstException.First());
             }
 
             logger.Report("All files encrypted. Committing changes...");
@@ -483,34 +494,44 @@ namespace FFLocker.Logic
             logger.Report($"Decrypting {fileMappings.Count} files with up to {Config.MaxParallelism} parallel tasks...");
             var processedFiles = 0;
             var decryptedFilePaths = new ConcurrentBag<(string, string)>();
-            var exceptionOccurred = false;
+            var firstException = new ConcurrentQueue<Exception>();
 
             try
             {
-                Parallel.ForEach(fileMappings, new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism }, mapping =>
+                Parallel.ForEach(fileMappings, new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism }, (mapping, loopState) =>
                 {
-                    var paths = DecryptFile(mapping.Key, mapping.Value, masterKey.Buffer, logger);
-                    decryptedFilePaths.Add(paths);
+                    try
+                    {
+                        if (loopState.IsStopped) return;
 
-                    var processed = Interlocked.Increment(ref processedFiles);
-                    var percentage = (int)((double)processed / fileMappings.Count * 100);
-                    progress.Report(percentage);
+                        var paths = DecryptFile(mapping.Key, mapping.Value, masterKey.Buffer, logger);
+                        decryptedFilePaths.Add(paths);
+
+                        var processed = Interlocked.Increment(ref processedFiles);
+                        var percentage = (int)((double)processed / fileMappings.Count * 100);
+                        progress.Report(percentage);
+                    }
+                    catch (Exception ex)
+                    {
+                        firstException.Enqueue(ex);
+                        loopState.Stop();
+                    }
                 });
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
-                logger.Report($"[ERROR] An exception occurred during decryption: {ex.Message}");
-                exceptionOccurred = true;
+                firstException.Enqueue(ex);
             }
 
-            if(exceptionOccurred)
+            if (!firstException.IsEmpty)
             {
+                logger.Report($"[ERROR] An exception occurred during decryption: {firstException.First().Message}");
                 logger.Report("An error occurred. Rolling back changes...");
                 foreach(var (tempPath, _) in decryptedFilePaths)
                 {
                     try { File.Delete(tempPath); } catch { }
                 }
-                throw new Exception("Decryption failed and was rolled back.");
+                throw new Exception("Decryption failed and was rolled back.", firstException.First());
             }
 
             logger.Report("All files decrypted. Committing changes...");
@@ -624,6 +645,7 @@ namespace FFLocker.Logic
         static (string, string, string) EncryptFile(string root, string relPath, byte[] masterKey, byte[] globalSalt, SecureCrypto crypto, IProgress<string> logger, bool useHello, byte[]? helloKey)
         {
             string inputPath = Path.Combine(root, relPath);
+            CheckFileLock(inputPath);
             string obfName = crypto.GenerateSecureFilename(Config.SecureRandomLength) + ".ffl";
             string outputPath = Path.Combine(root, obfName);
             string tempPath = outputPath + ".tmp";
@@ -682,6 +704,7 @@ namespace FFLocker.Logic
 
         static (string, string) DecryptFile(string encPath, string realPath, byte[] masterKey, IProgress<string> logger)
         {
+            CheckFileLock(encPath);
             string tempPath = realPath + ".tmp";
 
             try
@@ -789,6 +812,19 @@ namespace FFLocker.Logic
                 aes.Decrypt(header.PathNonce, header.EncryptedPath, header.PathEncryptionTag, decryptedPathBytes);
             }
             return Encoding.UTF8.GetString(decryptedPathBytes);
+        }
+
+        static void CheckFileLock(string filePath)
+        {
+            try
+            {
+                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.None);
+                stream.Close();
+            }
+            catch (IOException)
+            {
+                throw new IOException($"The file '{Path.GetFileName(filePath)}' is currently in use by another process.");
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
