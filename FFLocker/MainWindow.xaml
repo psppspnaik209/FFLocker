@@ -117,6 +117,12 @@
                 <ListView
                     x:Name="LockedItemsListView"
                     Header="Locked Items" />
+                <Button
+                    x:Name="UseThisButton"
+                    Margin="0,4,0,0"
+                    HorizontalAlignment="Stretch"
+                    Click="UseThisButton_Click"
+                    Content="Use This" />
             </StackPanel>
 
             <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0">

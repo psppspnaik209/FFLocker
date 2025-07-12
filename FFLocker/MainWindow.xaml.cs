@@ -625,5 +625,39 @@ namespace FFLocker
         {
             WinRT.Interop.InitializeWithWindow.Initialize(picker, _hwnd);
         }
+
+        private async void UseThisButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (LockedItemsListView.SelectedItem == null)
+            {
+                await ShowMessage("Please select an item from the list.");
+                return;
+            }
+
+            var selectedItemString = LockedItemsListView.SelectedItem.ToString();
+            if (string.IsNullOrEmpty(selectedItemString)) return;
+
+            // Remove the "[F] " or "[D] " prefix
+            var path = selectedItemString.Substring(4);
+
+            var allItems = LockedItemsDatabase.GetLockedItems();
+            LockedItemInfo? itemToUse = allItems.FirstOrDefault(i => i.OriginalPath == path || i.LockedPath == path);
+
+            if (itemToUse == null)
+            {
+                await ShowMessage("Could not find the selected item in the database.");
+                return;
+            }
+
+            PathTextBox.Text = itemToUse.LockedPath;
+            if (itemToUse.IsFolder)
+            {
+                FolderRadioButton.IsChecked = true;
+            }
+            else
+            {
+                FileRadioButton.IsChecked = true;
+            }
+        }
     }
 }
