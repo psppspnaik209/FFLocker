@@ -116,6 +116,7 @@ namespace FFLocker
             var logger = new Progress<string>(m => Log(m));
 
             SetUiInteraction(false);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 byte[]? helloKey = null;
@@ -146,13 +147,15 @@ namespace FFLocker
                     Encoding.UTF8.GetBytes(passwordResult.Password, 0, passwordResult.Password.Length, passwordBuffer.Buffer, 0);
                     // Pass the raw Hello-derived key to the encryption manager.
                     await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, progress, logger, helloKey));
-                    await ShowMessage("Lock successful!");
+                    sw.Stop();
+                    Log($"Lock successful in {sw.Elapsed.TotalSeconds:F2}s.");
                     PathTextBox.Text = "";
                     if (LockedItemsPanel.Visibility == Visibility.Visible) PopulateLockedItems();
                 }
             }
             catch (Exception ex)
             {
+                sw.Stop();
                 await ShowMessage($"An error occurred: {ex.Message}");
                 Log($"[ERROR] {ex.ToString()}");
             }
@@ -201,6 +204,7 @@ namespace FFLocker
         {
             var logger = new Progress<string>(m => Log(m));
             SetUiInteraction(false);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 Log("Attempting to unlock with Windows Hello...");
@@ -244,12 +248,14 @@ namespace FFLocker
                 Array.Copy(masterKeyBytes, masterKeyBuffer.Buffer, 32);
 
                 await Task.Run(() => EncryptionManager.UnlockWithMasterKey(path, masterKeyBuffer, new Progress<int>(), logger));
-                await ShowMessage("Unlock successful!");
+                sw.Stop();
+                Log($"Unlock successful in {sw.Elapsed.TotalSeconds:F2}s.");
                 PathTextBox.Text = "";
                 if (LockedItemsPanel.Visibility == Visibility.Visible) PopulateLockedItems();
             }
             catch (Exception ex)
             {
+                sw.Stop();
                 await ShowMessage($"An error occurred: {ex.Message}");
                 Log($"[ERROR] {ex.ToString()}");
             }
@@ -268,19 +274,22 @@ namespace FFLocker
             var logger = new Progress<string>(m => Log(m));
 
             SetUiInteraction(false);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 using (var passwordBuffer = new SecureBuffer(System.Text.Encoding.UTF8.GetByteCount(passwordResult.Password)))
                 {
                     System.Text.Encoding.UTF8.GetBytes(passwordResult.Password, 0, passwordResult.Password.Length, passwordBuffer.Buffer, 0);
                     await Task.Run(() => EncryptionManager.Unlock(path, passwordBuffer, progress, logger));
-                    await ShowMessage("Unlock successful!");
+                    sw.Stop();
+                    Log($"Unlock successful in {sw.Elapsed.TotalSeconds:F2}s.");
                     PathTextBox.Text = "";
                     if (LockedItemsPanel.Visibility == Visibility.Visible) PopulateLockedItems();
                 }
             }
             catch (Exception ex)
             {
+                sw.Stop();
                 await ShowMessage($"An error occurred: {ex.Message}");
             }
             finally

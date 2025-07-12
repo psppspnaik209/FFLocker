@@ -311,7 +311,6 @@ namespace FFLocker.Logic
         {
             if (path.EndsWith(".ffl", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
             {
-                var sw = Stopwatch.StartNew();
                 var header = GetFileHeader(path);
                 if (header == null) throw new Exception("Could not read file header.");
                 
@@ -326,9 +325,6 @@ namespace FFLocker.Logic
                 
                 progress.Report(100);
                 LockedItemsDatabase.Remove(realPath);
-
-                sw.Stop();
-                logger.Report($"File unlocked in {sw.Elapsed.TotalSeconds:F2}s");
             }
             else if (Directory.Exists(path))
             {
@@ -371,8 +367,6 @@ namespace FFLocker.Logic
 
         public static string LockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, byte[]? helloEncryptedKey)
         {
-            var sw = Stopwatch.StartNew();
-
             using var crypto = new SecureCrypto();
             using var masterKeyBuffer = new SecureBuffer(32);
             using var globalSaltBuffer = new SecureBuffer(32);
@@ -445,10 +439,6 @@ namespace FFLocker.Logic
                 }
             }
 
-            sw.Stop();
-            var encryptionRate = totalBytes / (1024 * 1024.0) / sw.Elapsed.TotalSeconds;
-            logger.Report($"Folder secured in {sw.Elapsed.TotalSeconds:F2}s - Rate: {encryptionRate:F1} MB/s");
-
             try
             {
                 string newRoot = root + "_USE_FOR_FOLDER_UNLOCK_DO_NOT_DELETE";
@@ -465,7 +455,6 @@ namespace FFLocker.Logic
 
         private static void UnlockFolderCore(string root, SecureBuffer masterKey, IProgress<int> progress, IProgress<string> logger)
         {
-            var sw = Stopwatch.StartNew();
             var encryptedFiles = Directory.GetFiles(root, "*.ffl");
             if (encryptedFiles.Length == 0)
             {
@@ -538,9 +527,6 @@ namespace FFLocker.Logic
             logger.Report("Cleaning up...");
             LockedItemsDatabase.Remove(root);
 
-            sw.Stop();
-            logger.Report($"Folder unlocked in {sw.Elapsed.TotalSeconds:F2}s");
-
             if (root.EndsWith("_USE_FOR_FOLDER_UNLOCK_DO_NOT_DELETE"))
             {
                 try
@@ -586,8 +572,6 @@ namespace FFLocker.Logic
             string root = Path.GetDirectoryName(filePath)!;
             string relPath = Path.GetFileName(filePath);
 
-            var sw = Stopwatch.StartNew();
-
             using var crypto = new SecureCrypto();
             using var masterKeyBuffer = new SecureBuffer(32);
             using var globalSaltBuffer = new SecureBuffer(32);
@@ -608,17 +592,11 @@ namespace FFLocker.Logic
 
             progress.Report(100);
 
-            sw.Stop();
-            var encryptionRate = new FileInfo(finalPath).Length / (1024 * 1024.0) / sw.Elapsed.TotalSeconds;
-            logger.Report($"File secured in {sw.Elapsed.TotalSeconds:F2}s - Rate: {encryptionRate:F1} MB/s");
-
             return finalPath;
         }
 
         public static void UnlockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
         {
-            var sw = Stopwatch.StartNew();
-
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
             var header = FileHeader.ReadFrom(fs);
             fs.Close();
@@ -641,9 +619,6 @@ namespace FFLocker.Logic
             progress.Report(100);
 
             LockedItemsDatabase.Remove(realPath);
-
-            sw.Stop();
-            logger.Report($"File unlocked in {sw.Elapsed.TotalSeconds:F2}s");
         }
 
         static (string, string, string) EncryptFile(string root, string relPath, byte[] masterKey, byte[] globalSalt, SecureCrypto crypto, IProgress<string> logger, bool useHello, byte[]? helloKey)
