@@ -1,10 +1,9 @@
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.Windows.AppLifecycle;
-using System;
-using System.Threading.Tasks;
 using Microsoft.Windows.ApplicationModel.DynamicDependency;
+using System;
 using FFLocker.Logic;
+using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 
 namespace FFLocker
 {
@@ -12,90 +11,61 @@ namespace FFLocker
     {
         private Window? _window;
 
+        #region P/Invoke Declarations
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetConsoleWindow();
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        private const int SW_HIDE = 0;
+
+        #endregion
+
         public App()
         {
             Bootstrap.Initialize(0x00010007);
             this.InitializeComponent();
+
+            // If there are no command-line args, we are in GUI mode. Hide the console.
+            if (Environment.GetCommandLineArgs().Length <= 1)
+            {
+                var handle = GetConsoleWindow();
+                if (handle != IntPtr.Zero)
+                {
+                    ShowWindow(handle, SW_HIDE);
+                }
+            }
         }
 
-        protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+        protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
             string[] cmdLineArgs = Environment.GetCommandLineArgs();
 
-            if (cmdLineArgs.Length == 3 && (cmdLineArgs[1] == "lock" || cmdLineArgs[1] == "unlock"))
+            if (cmdLineArgs.Length > 1)
             {
-                var operation = cmdLineArgs[1];
-                var path = cmdLineArgs[2];
-                HandleCommandLine(operation, path);
+                // This is a command-line activation.
+                // Since the OutputType is Exe, the console is already available.
+                if (cmdLineArgs.Length == 3 && (cmdLineArgs[1].Equals("lock", StringComparison.OrdinalIgnoreCase) || cmdLineArgs[1].Equals("unlock", StringComparison.OrdinalIgnoreCase)))
+                {
+                    var operation = cmdLineArgs[1];
+                    var path = cmdLineArgs[2];
+                    await CliManager.Handle(operation, path);
+                }
+                else
+                {
+                    Console.WriteLine("Invalid command-line arguments. Usage: FFLocker.exe [lock|unlock] \"<path>\"");
+                }
+
+                // Exit after handling the command line operation.
+                Current.Exit();
                 return;
             }
 
+            // This is a normal GUI activation.
             _window = new MainWindow();
             _window.Activate();
-        }
-
-        private async void HandleCommandLine(string operation, string path)
-        {
-            var password = await GetPassword();
-            if (string.IsNullOrEmpty(password))
-            {
-                Current.Exit();
-                return;
-            }
-
-            var progress = new Progress<int>(p => { });
-            var logger = new Progress<string>(m => { });
-
-            try
-            {
-                using (var passwordBuffer = new SecureBuffer(System.Text.Encoding.UTF8.GetByteCount(password)))
-                {
-                    System.Text.Encoding.UTF8.GetBytes(password, 0, password.Length, passwordBuffer.Buffer, 0);
-                    if (operation == "lock")
-                    {
-                        EncryptionManager.Lock(path, passwordBuffer, progress, logger);
-                    }
-                    else if (operation == "unlock")
-                    {
-                        await Task.Run(() => EncryptionManager.Unlock(path, passwordBuffer, progress, logger));
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                // Intentionally left blank
-            }
-            finally
-            {
-                Current.Exit();
-            }
-        }
-
-        private static async Task<string?> GetPassword()
-        {
-            var tempWindow = new Window() { Title = "FFLocker Password" };
-            tempWindow.Activate();
-
-            var passwordBox = new PasswordBox();
-            var dialog = new ContentDialog
-            {
-                Title = "Enter Password",
-                Content = passwordBox,
-                PrimaryButtonText = "Confirm",
-                CloseButtonText = "Cancel",
-                XamlRoot = tempWindow.Content.XamlRoot,
-            };
-
-            var result = await dialog.ShowAsync();
-
-            string? password = null;
-            if (result == ContentDialogResult.Primary)
-            {
-                password = passwordBox.Password;
-            }
-
-            tempWindow.Close();
-            return password;
         }
     }
 }

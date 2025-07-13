@@ -21,6 +21,11 @@ namespace FFLocker.Logic
             return await KeyCredentialManager.IsSupportedAsync();
         }
 
+        public static async Task<byte[]?> GenerateHelloDerivedKeyWithoutWindowAsync()
+        {
+            return await GenerateHelloDerivedKeyAsync(IntPtr.Zero);
+        }
+
         /// <summary>
         /// Generates a 32-byte key derived from a Windows Hello signature.
         /// This requires user interaction via the Windows Hello prompt.
