@@ -11,7 +11,6 @@ namespace FFLocker
     {
         public static async Task Handle(string operation, string path)
         {
-            Console.Clear();
             Console.WriteLine(@"
 ███████╗███████╗██╗      ██████╗  ██████╗██╗  ██╗███████╗██████╗ 
 ██╔════╝██╔════╝██║     ██╔═══██╗██╔════╝██║ ██╔╝██╔════╝██╔══██╗
@@ -50,29 +49,32 @@ namespace FFLocker
             if (!File.Exists(path) && !Directory.Exists(path))
             {
                 Console.WriteLine("Error: The specified file or folder does not exist.");
+                PauseAndExit();
                 return;
             }
 
             if (EncryptionManager.IsLocked(path))
             {
                 Console.WriteLine("The selected file or folder is already locked.");
+                PauseAndExit();
                 return;
             }
 
             Console.Write("Enter password: ");
             var password = ReadPassword();
-            Console.WriteLine(); 
+            Console.WriteLine();
 
             if (string.IsNullOrEmpty(password))
             {
                 Console.WriteLine("Error: A password is required.");
+                PauseAndExit();
                 return;
             }
 
             bool useHello = false;
             if (await HelloManager.IsHelloSupportedAsync())
             {
-                Console.Write("Use Windows Hello for faster unlocking? (y/n): ");
+                Console.Write("Use Windows Hello for faster unlocking? (y/n, press Enter for 'no'): ");
                 var response = Console.ReadLine() ?? "";
                 useHello = response.Trim().Equals("y", StringComparison.OrdinalIgnoreCase);
             }
@@ -104,11 +106,12 @@ namespace FFLocker
                     await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, new Progress<int>(), progress, helloKey));
                     sw.Stop();
                     Console.WriteLine($"Lock successful in {sw.Elapsed.TotalSeconds:F2}s.");
+                    PauseAndExit();
                 }
             }
             finally
             {
-                password = null; 
+                password = null;
             }
         }
 
@@ -117,6 +120,7 @@ namespace FFLocker
             if (!EncryptionManager.IsLocked(path))
             {
                 Console.WriteLine("The selected file or folder is not locked.");
+                PauseAndExit();
                 return;
             }
 
@@ -139,6 +143,7 @@ namespace FFLocker
                 else
                 {
                     Console.WriteLine("Invalid choice. Aborting.");
+                    PauseAndExit();
                 }
             }
             else
@@ -186,11 +191,13 @@ namespace FFLocker
                 await Task.Run(() => EncryptionManager.UnlockWithMasterKey(path, masterKeyBuffer, new Progress<int>(), logger));
                 sw.Stop();
                 Console.WriteLine($"Unlock successful in {sw.Elapsed.TotalSeconds:F2}s.");
+                PauseAndExit();
             }
             catch (Exception ex)
             {
                 sw.Stop();
                 Console.WriteLine($"An error occurred: {ex.Message}");
+                PauseAndExit();
             }
         }
 
@@ -203,6 +210,7 @@ namespace FFLocker
             if (string.IsNullOrEmpty(password))
             {
                 Console.WriteLine("Unlock canceled.");
+                PauseAndExit();
                 return;
             }
 
@@ -216,12 +224,14 @@ namespace FFLocker
                     await Task.Run(() => EncryptionManager.Unlock(path, passwordBuffer, new Progress<int>(), logger));
                     sw.Stop();
                     Console.WriteLine($"Unlock successful in {sw.Elapsed.TotalSeconds:F2}s.");
+                    PauseAndExit();
                 }
             }
             catch (Exception ex)
             {
                 sw.Stop();
                 Console.WriteLine($"An error occurred: {ex.Message}");
+                PauseAndExit();
             }
             finally
             {
@@ -255,7 +265,7 @@ namespace FFLocker
                 if (key.Key == ConsoleKey.Backspace && password.Length > 0)
                 {
                     password.Length--;
-                    Console.Write("\b \b"); 
+                    Console.Write("\b \b");
                 }
                 else if (!char.IsControl(key.KeyChar))
                 {
@@ -264,6 +274,12 @@ namespace FFLocker
                 }
             }
             return password.ToString();
+        }
+
+        private static void PauseAndExit()
+        {
+            Console.WriteLine("\nPress any key to exit...");
+            Console.ReadKey();
         }
     }
 }
