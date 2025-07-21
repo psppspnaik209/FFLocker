@@ -20,6 +20,17 @@ namespace FFLocker
         private IntPtr _hwnd;
         private bool _isLockedItemsViewAuthenticated = false;
         private bool _isWindowInitialized = false;
+        private string? _cliOperation;
+        private string? _cliPath;
+
+        public MainWindow(string[] args) : this()
+        {
+            if (args.Length == 3)
+            {
+                _cliOperation = args[1];
+                _cliPath = args[2];
+            }
+        }
 
         public MainWindow()
         {
@@ -50,6 +61,20 @@ namespace FFLocker
             LoadSettings();
             ApplyTheme();
             _isWindowInitialized = true;
+            RootGrid.Loaded += MainWindow_Loaded;
+        }
+
+        private bool _isCliHandled = false;
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Only run this once
+            if (_isCliHandled) return;
+            _isCliHandled = true;
+
+            if (_cliPath != null && _cliOperation != null)
+            {
+                await HandleCommandLineLaunch();
+            }
         }
 
         private async void BrowseButton_Click(object sender, RoutedEventArgs e)
@@ -97,6 +122,11 @@ namespace FFLocker
                 return;
             }
 
+            await PerformLockAsync(path);
+        }
+
+        private async Task PerformLockAsync(string path)
+        {
             if (EncryptionManager.IsLocked(path))
             {
                 await ShowMessage("The selected file or folder is already locked.");
@@ -165,6 +195,29 @@ namespace FFLocker
             }
         }
 
+        private async Task HandleCommandLineLaunch()
+        {
+            if (string.IsNullOrEmpty(_cliPath) || string.IsNullOrEmpty(_cliOperation)) return;
+
+            PathTextBox.Text = _cliPath;
+
+            if (_cliOperation.Equals("lock", StringComparison.OrdinalIgnoreCase))
+            {
+                await PerformLockAsync(_cliPath);
+            }
+            else if (_cliOperation.Equals("unlock", StringComparison.OrdinalIgnoreCase))
+            {
+                await PerformUnlockAsync(_cliPath);
+            }
+
+            // Close the window if the operation was successful,
+            // or if the user canceled.
+            if (!LogTextBox.Text.Contains("[ERROR]"))
+            {
+                this.Close();
+            }
+        }
+
         private async void UnlockButton_Click(object sender, RoutedEventArgs e)
         {
             var path = PathTextBox.Text;
@@ -174,6 +227,11 @@ namespace FFLocker
                 return;
             }
 
+            await PerformUnlockAsync(path);
+        }
+
+        private async Task PerformUnlockAsync(string path)
+        {
             if (!EncryptionManager.IsLocked(path))
             {
                 await ShowMessage("The selected file or folder is not locked.");
