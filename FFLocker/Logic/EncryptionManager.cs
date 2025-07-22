@@ -605,7 +605,6 @@ namespace FFLocker.Logic
 
 
             logger.Report("Cleaning up...");
-            LockedItemsDatabase.Remove(root);
 
             if (root.EndsWith("_USE_FOR_FOLDER_UNLOCK_DO_NOT_DELETE"))
             {
@@ -614,11 +613,16 @@ namespace FFLocker.Logic
                     string originalRoot = root.Replace("_USE_FOR_FOLDER_UNLOCK_DO_NOT_DELETE", "");
                     Directory.Move(root, originalRoot);
                     logger.Report($"Renamed folder back to: {Path.GetFileName(originalRoot)}");
+                    LockedItemsDatabase.Remove(originalRoot);
                 }
                 catch (Exception ex)
                 {
                     logger.Report($"Warning: Could not rename the unlocked folder back to its original name. Error: {ex.Message}");
                 }
+            }
+            else
+            {
+                LockedItemsDatabase.Remove(root);
             }
         }
         

@@ -30,10 +30,11 @@
 
         <Grid Grid.Row="1" Margin="16">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="590" />
+                <ColumnDefinition Width="320" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
@@ -94,32 +95,32 @@
                         </Button.Resources>
                     </Button>
                 </StackPanel>
-
-                <Grid x:Name="LogGrid" Visibility="Collapsed" Margin="0,16,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <StackPanel Margin="0,0,0,4" Orientation="Horizontal">
-                        <TextBlock
-                            Margin="0,0,8,0"
-                            Style="{ThemeResource TitleTextBlockStyle}"
-                            Text="Log" />
-                        <Button
-                            x:Name="ClearLogButton"
-                            Click="ClearLogButton_Click"
-                            Content="Clear" />
-                    </StackPanel>
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="250">
-                        <TextBox
-                            x:Name="LogTextBox"
-                            AcceptsReturn="True"
-                            IsReadOnly="True" />
-                    </ScrollViewer>
-                </Grid>
             </StackPanel>
 
-            <StackPanel Grid.Row="0" Grid.Column="1" x:Name="LockedItemsPanel" Visibility="Collapsed">
+            <Grid x:Name="LogGrid" Grid.Row="1" Grid.ColumnSpan="2" Visibility="Collapsed" Margin="0,16,0,0" HorizontalAlignment="Left" Width="590">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <StackPanel Margin="0,0,0,4" Orientation="Horizontal">
+                    <TextBlock
+                        Margin="0,0,8,0"
+                        Style="{ThemeResource TitleTextBlockStyle}"
+                        Text="Log" />
+                    <Button
+                        x:Name="ClearLogButton"
+                        Click="ClearLogButton_Click"
+                        Content="Clear" />
+                </StackPanel>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="250">
+                    <TextBox
+                        x:Name="LogTextBox"
+                        AcceptsReturn="True"
+                        IsReadOnly="True" />
+                </ScrollViewer>
+            </Grid>
+
+            <StackPanel Grid.Row="0" Grid.Column="1" Grid.RowSpan="2" x:Name="LockedItemsPanel" Visibility="Collapsed">
                 <ComboBox x:Name="LockedItemsViewComboBox"
                           Header="Display Names"
                           SelectedIndex="0"
@@ -139,7 +140,7 @@
                     Content="Use This" />
             </StackPanel>
 
-            <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0">
+            <Grid Grid.Row="2" Grid.ColumnSpan="2" Margin="0,8,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
