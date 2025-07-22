@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="FFLocker.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:FFLocker"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="FFLocker">
+
+    <Grid x:Name="RootGrid" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="AppTitleBar"
+              Grid.Row="0"
+              Height="32"
+              Background="{ThemeResource AccentFillColorDefaultBrush}">
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="320" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,16,0">
+                <StackPanel>
+                    <TextBox
+                        x:Name="PathTextBox"
+                        Header="File or Folder Path"
+                        IsReadOnly="True"
+                        PlaceholderText="Select a file or folder"/>
+                    <Button
+                        x:Name="BrowseButton"
+                        Margin="0,4,0,0"
+                        HorizontalAlignment="Stretch"
+                        Click="BrowseButton_Click"
+                        Content="Browse..." />
+                </StackPanel>
+
+                <StackPanel Margin="0,8,0,8" Orientation="Horizontal" HorizontalAlignment="Left">
+                    <RadioButton
+                        x:Name="FileRadioButton"
+                        Content="File"
+                        GroupName="PathType"
+                        IsChecked="True" />
+                    <RadioButton
+                        x:Name="FolderRadioButton"
+                        Margin="8,0,0,0"
+                        Content="Folder"
+                        GroupName="PathType" />
+                </StackPanel>
+
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <Button
+                        x:Name="LockButton"
+                        HorizontalAlignment="Stretch"
+                        Click="LockButton_Click"
+                        Content="Lock" />
+                    <Button
+                        x:Name="UnlockButton"
+                        HorizontalAlignment="Stretch"
+                        Click="UnlockButton_Click"
+                        Content="Unlock" />
+                    <Button
+                        x:Name="CancelButton"
+                        HorizontalAlignment="Stretch"
+                        Click="CancelButton_Click"
+                        Content="Cancel"
+                        Visibility="Collapsed">
+                        <Button.Resources>
+                            <ResourceDictionary>
+                                <SolidColorBrush x:Key="ButtonBackground" Color="DarkRed"/>
+                                <SolidColorBrush x:Key="ButtonForeground" Color="White"/>
+                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="Red"/>
+                            </ResourceDictionary>
+                        </Button.Resources>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+
+            <Grid x:Name="LogGrid" Grid.Row="1" Grid.ColumnSpan="2" Visibility="Collapsed" Margin="0,16,0,0" HorizontalAlignment="Left" Width="590">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <StackPanel Margin="0,0,0,4" Orientation="Horizontal">
+                    <TextBlock
+                        Margin="0,0,8,0"
+                        Style="{ThemeResource TitleTextBlockStyle}"
+                        Text="Log" />
+                    <Button
+                        x:Name="ClearLogButton"
+                        Click="ClearLogButton_Click"
+                        Content="Clear" />
+                </StackPanel>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="250">
+                    <TextBox
+                        x:Name="LogTextBox"
+                        AcceptsReturn="True"
+                        IsReadOnly="True" />
+                </ScrollViewer>
+            </Grid>
+
+            <StackPanel Grid.Row="0" Grid.Column="1" Grid.RowSpan="2" x:Name="LockedItemsPanel" Visibility="Collapsed">
+                <ComboBox x:Name="LockedItemsViewComboBox"
+                          Header="Display Names"
+                          SelectedIndex="0"
+                          SelectionChanged="LockedItemsViewComboBox_SelectionChanged"
+                          Margin="0,0,0,4">
+                    <ComboBoxItem Content="Original Names" />
+                    <ComboBoxItem Content="Fake Names" />
+                </ComboBox>
+                <ListView
+                    x:Name="LockedItemsListView"
+                    Header="Locked Items" />
+                <Button
+                    x:Name="UseThisButton"
+                    Margin="0,4,0,0"
+                    HorizontalAlignment="Stretch"
+                    Click="UseThisButton_Click"
+                    Content="Use This" />
+            </StackPanel>
+
+            <Grid Grid.Row="2" Grid.ColumnSpan="2" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                    <CheckBox
+                        x:Name="ShowInfoCheckBox"
+                        Checked="ShowInfoCheckBox_Checked"
+                        Content="Log"
+                        Unchecked="ShowInfoCheckBox_Unchecked" />
+                    <Button
+                        x:Name="ShowLockedButton"
+                        Click="ShowLockedButton_Click"
+                        Content="Show Locked Items" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+                    <CheckBox
+                        x:Name="ContextMenuCheckBox"
+                        Checked="ContextMenuCheckBox_Checked"
+                        Content="Context Menu"
+                        Unchecked="ContextMenuCheckBox_Unchecked" />
+                    <ComboBox
+                        x:Name="ThemeComboBox"
+                        SelectionChanged="ThemeComboBox_SelectionChanged"
+                        SelectedIndex="2">
+                        <ComboBoxItem Content="Light" />
+                        <ComboBoxItem Content="Dark" />
+                        <ComboBoxItem Content="System" />
+                    </ComboBox>
+                    <Button
+                        x:Name="AboutButton"
+                        Click="AboutButton_Click"
+                        Content="About" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>
