@@ -9,8 +9,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
-using Windows.Storage.Pickers;
-using Windows.Storage.Streams;
+
 
 namespace FFLocker
 {
@@ -93,24 +92,36 @@ namespace FFLocker
             }
         }
 
-        private async Task<string?> PickPathAsync()
+        private Task<string?> PickPathAsync()
         {
-            if (FolderRadioButton.IsChecked == true)
+            // Get the state of the radio button on the UI thread.
+            var isFolderPicker = FolderRadioButton.IsChecked == true;
+
+            return Task.Run(() =>
             {
-                var folderPicker = new FolderPicker();
-                InitializeWithWindow(folderPicker);
-                folderPicker.FileTypeFilter.Add("*");
-                var folder = await folderPicker.PickSingleFolderAsync();
-                return folder?.Path;
-            }
-            else
-            {
-                var filePicker = new FileOpenPicker();
-                InitializeWithWindow(filePicker);
-                filePicker.FileTypeFilter.Add("*");
-                var file = await filePicker.PickSingleFileAsync();
-                return file?.Path;
-            }
+                var dialog = (IFileOpenDialog)new FileOpenDialogCoClass();
+                dialog.SetOptions(FOS.FOS_PATHMUSTEXIST | FOS.FOS_FILEMUSTEXIST);
+
+                // Use the captured state in the background thread.
+                if (isFolderPicker)
+                {
+                    dialog.GetOptions(out var options);
+                    dialog.SetOptions(options | FOS.FOS_PICKFOLDERS);
+                }
+
+                var hr = dialog.Show(_hwnd);
+                if (hr == 0) // S_OK
+                {
+                    dialog.GetResult(out var item);
+                    item.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out var path);
+                    Marshal.ReleaseComObject(item);
+                    Marshal.ReleaseComObject(dialog);
+                    return path;
+                }
+
+                Marshal.ReleaseComObject(dialog);
+                return null;
+            });
         }
 
         private async void LockButton_Click(object sender, RoutedEventArgs e)
@@ -718,10 +729,7 @@ namespace FFLocker
             }
         }
 
-        private void InitializeWithWindow(object picker)
-        {
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, _hwnd);
-        }
+        
 
         private async void UseThisButton_Click(object sender, RoutedEventArgs e)
         {
