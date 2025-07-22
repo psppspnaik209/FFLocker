@@ -2,6 +2,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.Windows.ApplicationModel.DynamicDependency;
 using System;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace FFLocker
 {
@@ -9,20 +11,41 @@ namespace FFLocker
     {
         private Window? _window;
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AllocConsole();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool FreeConsole();
+
         public App()
         {
             Bootstrap.Initialize(0x00010007);
             this.InitializeComponent();
         }
 
-        protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+        protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
-            // The new CLI logic is handled by the main window.
-            // We pass the command-line arguments to the main window's constructor.
             string[] cmdLineArgs = Environment.GetCommandLineArgs();
 
-            _window = new MainWindow(cmdLineArgs);
-            _window.Activate();
+            if (cmdLineArgs.Length > 1)
+            {
+                try
+                {
+                    AllocConsole();
+                    await CliManager.Handle(cmdLineArgs[1], cmdLineArgs.Length > 2 ? cmdLineArgs[2] : "");
+                }
+                finally
+                {
+                    FreeConsole();
+                    // Exit the application after the CLI command has been handled
+                    Application.Current.Exit();
+                }
+            }
+            else
+            {
+                _window = new MainWindow();
+                _window.Activate();
+            }
         }
     }
 }
