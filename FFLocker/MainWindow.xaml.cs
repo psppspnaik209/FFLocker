@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 
@@ -156,6 +157,9 @@ namespace FFLocker
             var progress = new Progress<int>(p => { });
             var logger = new Progress<string>(m => Log(m));
 
+            _cancellationTokenSource = new CancellationTokenSource();
+            var token = _cancellationTokenSource.Token;
+
             SetUiInteraction(false);
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
@@ -187,12 +191,18 @@ namespace FFLocker
                 {
                     Encoding.UTF8.GetBytes(passwordResult.Password, 0, passwordResult.Password.Length, passwordBuffer.Buffer, 0);
                     // Pass the raw Hello-derived key to the encryption manager.
-                    await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, progress, logger, helloKey));
+                    await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, progress, logger, token, helloKey), token);
                     sw.Stop();
                     Log($"Lock successful in {sw.Elapsed.TotalSeconds:F2}s.");
                     PathTextBox.Text = "";
                     if (LockedItemsPanel.Visibility == Visibility.Visible) PopulateLockedItems();
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                sw.Stop();
+                Log("[ERROR] Operation was canceled by the user.");
+                await ShowMessage("The lock operation was canceled.");
             }
             catch (Exception ex)
             {
@@ -251,25 +261,28 @@ namespace FFLocker
 
             bool isHelloUsed = EncryptionManager.IsHelloUsed(path);
 
+            _cancellationTokenSource = new CancellationTokenSource();
+            var token = _cancellationTokenSource.Token;
+
             if (isHelloUsed)
             {
                 var result = await ShowHelloUnlockDialog();
                 if (result == ContentDialogResult.Primary) // Unlock with Hello
                 {
-                    await UnlockWithHelloAsync(path);
+                    await UnlockWithHelloAsync(path, token);
                 }
                 else if (result == ContentDialogResult.Secondary) // Unlock with Password
                 {
-                    await UnlockWithPasswordAsync(path);
+                    await UnlockWithPasswordAsync(path, token);
                 }
             }
             else
             {
-                await UnlockWithPasswordAsync(path);
+                await UnlockWithPasswordAsync(path, token);
             }
         }
 
-        private async Task UnlockWithHelloAsync(string path)
+        private async Task UnlockWithHelloAsync(string path, CancellationToken token)
         {
             var logger = new Progress<string>(m => Log(m));
             SetUiInteraction(false);
@@ -316,11 +329,17 @@ namespace FFLocker
                 using var masterKeyBuffer = new SecureBuffer(32);
                 Array.Copy(masterKeyBytes, masterKeyBuffer.Buffer, 32);
 
-                await Task.Run(() => EncryptionManager.UnlockWithMasterKey(path, masterKeyBuffer, new Progress<int>(), logger));
+                await Task.Run(() => EncryptionManager.UnlockWithMasterKey(path, masterKeyBuffer, new Progress<int>(), logger, token), token);
                 sw.Stop();
                 Log($"Unlock successful in {sw.Elapsed.TotalSeconds:F2}s.");
                 PathTextBox.Text = "";
                 if (LockedItemsPanel.Visibility == Visibility.Visible) PopulateLockedItems();
+            }
+            catch (OperationCanceledException)
+            {
+                sw.Stop();
+                Log("[ERROR] Operation was canceled by the user.");
+                await ShowMessage("The unlock operation was canceled.");
             }
             catch (Exception ex)
             {
@@ -334,7 +353,7 @@ namespace FFLocker
             }
         }
 
-        private async Task UnlockWithPasswordAsync(string path)
+        private async Task UnlockWithPasswordAsync(string path, CancellationToken token)
         {
             var passwordResult = await GetPassword(forUnlocking: true);
             if (passwordResult is null || string.IsNullOrEmpty(passwordResult.Password)) return;
@@ -349,12 +368,18 @@ namespace FFLocker
                 using (var passwordBuffer = new SecureBuffer(System.Text.Encoding.UTF8.GetByteCount(passwordResult.Password)))
                 {
                     System.Text.Encoding.UTF8.GetBytes(passwordResult.Password, 0, passwordResult.Password.Length, passwordBuffer.Buffer, 0);
-                    await Task.Run(() => EncryptionManager.Unlock(path, passwordBuffer, progress, logger));
+                    await Task.Run(() => EncryptionManager.Unlock(path, passwordBuffer, progress, logger, token), token);
                     sw.Stop();
                     Log($"Unlock successful in {sw.Elapsed.TotalSeconds:F2}s.");
                     PathTextBox.Text = "";
                     if (LockedItemsPanel.Visibility == Visibility.Visible) PopulateLockedItems();
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                sw.Stop();
+                Log("[ERROR] Operation was canceled by the user.");
+                await ShowMessage("The unlock operation was canceled.");
             }
             catch (Exception ex)
             {
@@ -574,6 +599,27 @@ namespace FFLocker
             }
         }
 
+        private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
+
+        private async void CancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Cancel Operation",
+                Content = "Are you sure you want to cancel? This may result in an inconsistent state or data loss.",
+                PrimaryButtonText = "Yes, Cancel",
+                CloseButtonText = "No",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+            {
+                Log("Cancellation requested by user.");
+                _cancellationTokenSource.Cancel();
+            }
+        }
+
         private void SetUiInteraction(bool isEnabled)
         {
             // Main action controls
@@ -583,6 +629,9 @@ namespace FFLocker
             PathTextBox.IsEnabled = isEnabled;
             FolderRadioButton.IsEnabled = isEnabled;
             FileRadioButton.IsEnabled = isEnabled;
+
+            // Cancel button is visible only when an operation is running
+            CancelButton.Visibility = isEnabled ? Visibility.Collapsed : Visibility.Visible;
 
             // Locked items panel controls
             ShowLockedButton.IsEnabled = isEnabled;

@@ -103,7 +103,7 @@ namespace FFLocker
                 using (var passwordBuffer = new SecureBuffer(Encoding.UTF8.GetByteCount(password)))
                 {
                     Encoding.UTF8.GetBytes(password, 0, password.Length, passwordBuffer.Buffer, 0);
-                    await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, new Progress<int>(), progress, helloKey));
+                    await Task.Run(() => EncryptionManager.Lock(path, passwordBuffer, new Progress<int>(), progress, default, helloKey));
                     sw.Stop();
                     Console.WriteLine($"Lock successful in {sw.Elapsed.TotalSeconds:F2}s.");
                     PauseAndExit();

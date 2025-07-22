@@ -79,6 +79,20 @@
                         HorizontalAlignment="Stretch"
                         Click="UnlockButton_Click"
                         Content="Unlock" />
+                    <Button
+                        x:Name="CancelButton"
+                        HorizontalAlignment="Stretch"
+                        Click="CancelButton_Click"
+                        Content="Cancel"
+                        Visibility="Collapsed">
+                        <Button.Resources>
+                            <ResourceDictionary>
+                                <SolidColorBrush x:Key="ButtonBackground" Color="DarkRed"/>
+                                <SolidColorBrush x:Key="ButtonForeground" Color="White"/>
+                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="Red"/>
+                            </ResourceDictionary>
+                        </Button.Resources>
+                    </Button>
                 </StackPanel>
 
                 <Grid x:Name="LogGrid" Visibility="Collapsed" Margin="0,16,0,0">

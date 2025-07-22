@@ -7,7 +7,9 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -307,7 +309,7 @@ namespace FFLocker.Logic
             }
         }
 
-        public static void UnlockWithMasterKey(string path, SecureBuffer masterKey, IProgress<int> progress, IProgress<string> logger)
+        public static void UnlockWithMasterKey(string path, SecureBuffer masterKey, IProgress<int> progress, IProgress<string> logger, CancellationToken token = default)
         {
             if (path.EndsWith(".ffl", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
             {
@@ -320,29 +322,31 @@ namespace FFLocker.Logic
                 logger.Report($"Decrypting file: {originalPath}");
                 var (tempPath, finalPath) = DecryptFile(path, realPath, masterKey.Buffer, logger);
                 
+                token.ThrowIfCancellationRequested();
+
                 File.Move(tempPath, finalPath, true);
-                SecureDeleteFile(path);
+                SecureDeleteFile(path, logger);
                 
                 progress.Report(100);
                 LockedItemsDatabase.Remove(realPath);
             }
             else if (Directory.Exists(path))
             {
-                UnlockFolderCore(path, masterKey, progress, logger);
+                UnlockFolderCore(path, masterKey, progress, logger, token);
             }
         }
 
-        public static string Lock(string path, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, byte[]? helloEncryptedKey = null)
+        public static string Lock(string path, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, CancellationToken token = default, byte[]? helloEncryptedKey = null)
         {
             string lockedPath;
             bool isFolder = false;
             if (File.Exists(path))
             {
-                lockedPath = LockFile(path, password, progress, logger, helloEncryptedKey);
+                lockedPath = LockFile(path, password, progress, logger, token, helloEncryptedKey);
             }
             else if (Directory.Exists(path))
             {
-                lockedPath = LockFolder(path, password, progress, logger, helloEncryptedKey);
+                lockedPath = LockFolder(path, password, progress, logger, token, helloEncryptedKey);
                 isFolder = true;
             }
             else
@@ -353,19 +357,19 @@ namespace FFLocker.Logic
             return lockedPath;
         }
 
-        public static void Unlock(string path, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
+        public static void Unlock(string path, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, CancellationToken token = default)
         {
             if (path.EndsWith(".ffl", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
             {
-                UnlockFile(path, password, progress, logger);
+                UnlockFile(path, password, progress, logger, token);
             }
             else if (Directory.Exists(path))
             {
-                UnlockFolder(path, password, progress, logger);
+                UnlockFolder(path, password, progress, logger, token);
             }
         }
 
-        public static string LockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, byte[]? helloEncryptedKey)
+        public static string LockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, CancellationToken token = default, byte[]? helloEncryptedKey = null)
         {
             using var crypto = new SecureCrypto();
             using var masterKeyBuffer = new SecureBuffer(32);
@@ -380,13 +384,13 @@ namespace FFLocker.Logic
 
             var fileInfos = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
                 .Select(f => new { Path = f, RelPath = Path.GetRelativePath(root, f), Size = new FileInfo(f).Length })
-                .Where(f => f.Size > 0).ToList();
+                .ToList();
 
             var totalBytes = fileInfos.Sum(f => f.Size);
             logger.Report($"Found {fileInfos.Count} files to encrypt, total size: {FormatSize(totalBytes)}.");
 
             var processedFiles = 0;
-            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism };
+            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism, CancellationToken = token };
             var encryptedFilePaths = new ConcurrentBag<(string, string, string)>();
             var firstException = new ConcurrentQueue<Exception>();
 
@@ -396,11 +400,12 @@ namespace FFLocker.Logic
             {
                 Parallel.ForEach(fileInfos, parallelOptions, (fileInfo, loopState) =>
                 {
+                    token.ThrowIfCancellationRequested();
                     try
                     {
                         if (loopState.IsStopped) return;
 
-                        var paths = EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger, helloEncryptedKey != null, helloEncryptedKey);
+                        var paths = EncryptFile(root, fileInfo.RelPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger, helloEncryptedKey != null, helloEncryptedKey, token);
                         encryptedFilePaths.Add(paths);
                         var processed = Interlocked.Increment(ref processedFiles);
                         var percentage = (int)((double)processed / fileInfos.Count * 100);
@@ -412,6 +417,16 @@ namespace FFLocker.Logic
                         loopState.Stop();
                     }
                 });
+            }
+            catch (OperationCanceledException)
+            {
+                logger.Report("Encryption canceled.");
+                // Rollback
+                foreach (var (_, tempPath, _) in encryptedFilePaths)
+                {
+                    try { File.Delete(tempPath); } catch { }
+                }
+                throw;
             }
             catch (Exception ex)
             {
@@ -430,26 +445,54 @@ namespace FFLocker.Logic
                 throw new Exception("Encryption failed and was rolled back.", firstException.First());
             }
 
+            token.ThrowIfCancellationRequested();
+
             logger.Report("All files encrypted. Committing changes...");
             foreach(var (originalPath, tempPath, finalPath) in encryptedFilePaths)
             {
+                token.ThrowIfCancellationRequested();
                 File.Move(tempPath, finalPath, true);
-                SecureDeleteFile(originalPath);
             }
 
-            logger.Report("Renaming directories...");
-            var dirRelPaths = Directory.GetDirectories(root, "*", SearchOption.AllDirectories)
-                .Select(d => Path.GetRelativePath(root, d)).OrderByDescending(r => r.Length).ToList();
-
-            foreach (var rel in dirRelPaths)
+            logger.Report("Deleting original files...");
+            foreach (var (originalPath, _, _) in encryptedFilePaths)
             {
-                string original = Path.Combine(root, rel);
-                if (Directory.Exists(original) && !Directory.EnumerateFileSystemEntries(original).Any())
+                token.ThrowIfCancellationRequested();
+                SecureDeleteFile(originalPath, logger);
+            }
+
+            logger.Report("Deleting original empty directories...");
+            try
+            {
+                var dirRelPaths = Directory.GetDirectories(root, "*", SearchOption.AllDirectories)
+                    .Select(d => Path.GetRelativePath(root, d))
+                    .Where(d => !string.IsNullOrEmpty(d)) // Exclude the root itself
+                    .OrderByDescending(r => r.Length)
+                    .ToList();
+
+                foreach (var rel in dirRelPaths)
                 {
-                    Directory.Delete(original);
+                    token.ThrowIfCancellationRequested();
+                    string original = Path.Combine(root, rel);
+                    if (Directory.Exists(original) && !Directory.EnumerateFileSystemEntries(original).Any())
+                    {
+                        try
+                        {
+                            Directory.Delete(original);
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.Report($"[Warning] Could not delete directory '{original}': {ex.Message}");
+                        }
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                logger.Report($"[Warning] An error occurred while trying to delete empty directories: {ex.Message}");
+            }
 
+            token.ThrowIfCancellationRequested();
             try
             {
                 string newRoot = root + "_USE_FOR_FOLDER_UNLOCK_DO_NOT_DELETE";
@@ -464,7 +507,7 @@ namespace FFLocker.Logic
             }
         }
 
-        private static void UnlockFolderCore(string root, SecureBuffer masterKey, IProgress<int> progress, IProgress<string> logger)
+        private static void UnlockFolderCore(string root, SecureBuffer masterKey, IProgress<int> progress, IProgress<string> logger, CancellationToken token = default)
         {
             var encryptedFiles = Directory.GetFiles(root, "*.ffl");
             if (encryptedFiles.Length == 0)
@@ -478,6 +521,7 @@ namespace FFLocker.Logic
             logger.Report("Reading file headers...");
             foreach (var file in encryptedFiles)
             {
+                token.ThrowIfCancellationRequested();
                 using var fs = new FileStream(file, FileMode.Open, FileAccess.Read);
                 var header = FileHeader.ReadFrom(fs);
                 var originalPath = DecryptPathFromHeader(header, masterKey.Buffer);
@@ -487,6 +531,7 @@ namespace FFLocker.Logic
             logger.Report($"Found {fileMappings.Count} files. Restoring directory structure...");
             foreach (var path in fileMappings.Values.Select(p => Path.GetDirectoryName(p)).Distinct())
             {
+                token.ThrowIfCancellationRequested();
                 if (!string.IsNullOrEmpty(path) && !Directory.Exists(path))
                     Directory.CreateDirectory(path);
             }
@@ -498,13 +543,14 @@ namespace FFLocker.Logic
 
             try
             {
-                Parallel.ForEach(fileMappings, new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism }, (mapping, loopState) =>
+                Parallel.ForEach(fileMappings, new ParallelOptions { MaxDegreeOfParallelism = Config.MaxParallelism, CancellationToken = token }, (mapping, loopState) =>
                 {
+                    token.ThrowIfCancellationRequested();
                     try
                     {
                         if (loopState.IsStopped) return;
 
-                        var paths = DecryptFile(mapping.Key, mapping.Value, masterKey.Buffer, logger);
+                        var paths = DecryptFile(mapping.Key, mapping.Value, masterKey.Buffer, logger, token);
                         decryptedFilePaths.Add(paths);
 
                         var processed = Interlocked.Increment(ref processedFiles);
@@ -517,6 +563,16 @@ namespace FFLocker.Logic
                         loopState.Stop();
                     }
                 });
+            }
+            catch (OperationCanceledException)
+            {
+                logger.Report("Decryption canceled.");
+                // Rollback
+                foreach (var (tempPath, _) in decryptedFilePaths)
+                {
+                    try { File.Delete(tempPath); } catch { }
+                }
+                throw;
             }
             catch (Exception ex)
             {
@@ -534,14 +590,17 @@ namespace FFLocker.Logic
                 throw new Exception("Decryption failed and was rolled back.", firstException.First());
             }
 
+            token.ThrowIfCancellationRequested();
             logger.Report("All files decrypted. Committing changes...");
             foreach(var (tempPath, finalPath) in decryptedFilePaths)
             {
+                token.ThrowIfCancellationRequested();
                 File.Move(tempPath, finalPath, true);
             }
             foreach(var encFile in encryptedFiles)
             {
-                SecureDeleteFile(encFile);
+                token.ThrowIfCancellationRequested();
+                SecureDeleteFile(encFile, logger);
             }
 
 
@@ -563,7 +622,7 @@ namespace FFLocker.Logic
             }
         }
         
-        public static void UnlockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
+        public static void UnlockFolder(string root, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, CancellationToken token = default)
         {
             var encryptedFiles = Directory.GetFiles(root, "*.ffl");
             if (encryptedFiles.Length == 0)
@@ -585,10 +644,10 @@ namespace FFLocker.Logic
             Array.Copy(derivedKey, masterKeyBuffer.Buffer, 32);
             CryptographicOperations.ZeroMemory(derivedKey);
 
-            UnlockFolderCore(root, masterKeyBuffer, progress, logger);
+            UnlockFolderCore(root, masterKeyBuffer, progress, logger, token);
         }
 
-        public static string LockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, byte[]? helloEncryptedKey = null)
+        public static string LockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, CancellationToken token = default, byte[]? helloEncryptedKey = null)
         {
             string root = Path.GetDirectoryName(filePath)!;
             string relPath = Path.GetFileName(filePath);
@@ -606,17 +665,19 @@ namespace FFLocker.Logic
 
             logger.Report($"Encrypting file: {relPath} ({FormatSize(new FileInfo(filePath).Length)})");
             
-            var (originalPath, tempPath, finalPath) = EncryptFile(root, relPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger, helloEncryptedKey != null, helloEncryptedKey);
+            token.ThrowIfCancellationRequested();
+            var (originalPath, tempPath, finalPath) = EncryptFile(root, relPath, masterKeyBuffer.Buffer, globalSaltBuffer.Buffer, crypto, logger, helloEncryptedKey != null, helloEncryptedKey, token);
             
+            token.ThrowIfCancellationRequested();
             File.Move(tempPath, finalPath, true);
-            SecureDeleteFile(originalPath);
+            SecureDeleteFile(originalPath, logger);
 
             progress.Report(100);
 
             return finalPath;
         }
 
-        public static void UnlockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger)
+        public static void UnlockFile(string filePath, SecureBuffer password, IProgress<int> progress, IProgress<string> logger, CancellationToken token = default)
         {
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
             var header = FileHeader.ReadFrom(fs);
@@ -632,17 +693,19 @@ namespace FFLocker.Logic
             var realPath = Path.Combine(Path.GetDirectoryName(filePath)!, originalPath);
 
             logger.Report($"Decrypting file: {originalPath}");
-            var (tempPath, finalPath) = DecryptFile(filePath, realPath, masterKeyBuffer.Buffer, logger);
+            token.ThrowIfCancellationRequested();
+            var (tempPath, finalPath) = DecryptFile(filePath, realPath, masterKeyBuffer.Buffer, logger, token);
             
+            token.ThrowIfCancellationRequested();
             File.Move(tempPath, finalPath, true);
-            SecureDeleteFile(filePath);
+            SecureDeleteFile(filePath, logger);
             
             progress.Report(100);
 
             LockedItemsDatabase.Remove(realPath);
         }
 
-        static (string, string, string) EncryptFile(string root, string relPath, byte[] masterKey, byte[] globalSalt, SecureCrypto crypto, IProgress<string> logger, bool useHello, byte[]? helloKey)
+        static (string, string, string) EncryptFile(string root, string relPath, byte[] masterKey, byte[] globalSalt, SecureCrypto crypto, IProgress<string> logger, bool useHello, byte[]? helloKey, CancellationToken token = default)
         {
             string inputPath = Path.Combine(root, relPath);
             CheckFileLock(inputPath);
@@ -691,7 +754,7 @@ namespace FFLocker.Logic
                 using var fileKeyBuffer = new SecureBuffer(32);
                 DeriveFileKey(masterKey, relPath, fileSalt, fileKeyBuffer.Buffer);
 
-                EncryptFileStream(inputPath, tempPath, fileKeyBuffer.Buffer, crypto, header);
+                EncryptFileStream(inputPath, tempPath, fileKeyBuffer.Buffer, crypto, header, token);
 
                 return (inputPath, tempPath, outputPath);
             }
@@ -702,7 +765,7 @@ namespace FFLocker.Logic
             }
         }
 
-        static (string, string) DecryptFile(string encPath, string realPath, byte[] masterKey, IProgress<string> logger)
+        static (string, string) DecryptFile(string encPath, string realPath, byte[] masterKey, IProgress<string> logger, CancellationToken token = default)
         {
             CheckFileLock(encPath);
             string tempPath = realPath + ".tmp";
@@ -717,7 +780,7 @@ namespace FFLocker.Logic
                 using var fileKeyBuffer = new SecureBuffer(32);
                 DeriveFileKey(masterKey, originalRelPath, header.FileSalt, fileKeyBuffer.Buffer);
 
-                DecryptFileStream(fs, tempPath, fileKeyBuffer.Buffer, header.OriginalFileLength);
+                DecryptFileStream(fs, tempPath, fileKeyBuffer.Buffer, header.OriginalFileLength, token);
                 fs.Close();
 
                 return (tempPath, realPath);
@@ -729,7 +792,7 @@ namespace FFLocker.Logic
             }
         }
 
-        static void EncryptFileStream(string inputPath, string outputPath, byte[] key, SecureCrypto crypto, FileHeader header)
+        static void EncryptFileStream(string inputPath, string outputPath, byte[] key, SecureCrypto crypto, FileHeader header, CancellationToken token = default)
         {
             using var inputStream = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, Config.BufferSize);
             using var outputStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, Config.BufferSize);
@@ -741,6 +804,7 @@ namespace FFLocker.Logic
 
             while ((bytesRead = inputStream.Read(buffer, 0, buffer.Length)) > 0)
             {
+                token.ThrowIfCancellationRequested();
                 var chunkNonce = new byte[NONCE_SIZE];
                 crypto.GetBytes(chunkNonce);
 
@@ -762,13 +826,14 @@ namespace FFLocker.Logic
             outputStream.Write(MagicFooter, 0, MagicFooter.Length);
         }
 
-        static void DecryptFileStream(Stream inputStream, string realPath, byte[] key, long originalFileSize)
+        static void DecryptFileStream(Stream inputStream, string realPath, byte[] key, long originalFileSize, CancellationToken token = default)
         {
             using var outputStream = new FileStream(realPath, FileMode.Create, FileAccess.Write, FileShare.None, Config.BufferSize);
             long totalWritten = 0;
 
             while (totalWritten < originalFileSize)
             {
+                token.ThrowIfCancellationRequested();
                 var chunkNonce = new byte[NONCE_SIZE];
                 inputStream.ReadExactly(chunkNonce, 0, NONCE_SIZE);
 
@@ -844,34 +909,91 @@ namespace FFLocker.Logic
             CryptographicOperations.ZeroMemory(combined);
         }
 
-        static void SecureDeleteFile(string filePath)
+        static void SecureDeleteFile(string filePath, IProgress<string> logger)
         {
-            try
-            {
-                if (File.Exists(filePath))
-                {
-                    var fileInfo = new FileInfo(filePath);
-                    var randomData = new byte[Math.Min(fileInfo.Length, 1024 * 1024)];
+            const int retries = 5;
+            const int delay = 200; // ms
 
-                    using (var crypto = new SecureCrypto())
-                    using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Write))
+            for (int i = 0; i < retries; i++)
+            {
+                try
+                {
+                    if (!File.Exists(filePath)) return;
+
+                    // Attempt to overwrite the file with random data first.
+                    try
                     {
-                        long remaining = fileInfo.Length;
-                        while (remaining > 0)
+                        var fileInfo = new FileInfo(filePath);
+                        // Ensure the file is not read-only
+                        if (fileInfo.IsReadOnly)
                         {
-                            int toWrite = (int)Math.Min(randomData.Length, remaining);
-                            crypto.GetBytes(randomData.AsSpan(0, toWrite));
-                            fileStream.Write(randomData, 0, toWrite);
-                            remaining -= toWrite;
+                            fileInfo.IsReadOnly = false;
                         }
+
+                        using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Write, FileShare.None))
+                        {
+                            long length = fs.Length;
+                            const int bufferSize = 4096;
+                            var buffer = new byte[bufferSize];
+                            using (var rng = RandomNumberGenerator.Create())
+                            {
+                                long remaining = length;
+                                while (remaining > 0)
+                                {
+                                    rng.GetBytes(buffer);
+                                    int toWrite = (int)Math.Min(buffer.Length, remaining);
+                                    fs.Write(buffer, 0, toWrite);
+                                    remaining -= toWrite;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.Report($"[Warning] Could not overwrite file '{filePath}' before deletion: {ex.Message}");
                     }
 
                     File.Delete(filePath);
+                    return;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    logger.Report($"[Info] UnauthorizedAccessException for '{filePath}', attempting to take ownership. Error: {ex.Message}");
+                    try
+                    {
+                        var fileInfo = new FileInfo(filePath);
+                        var fileSecurity = fileInfo.GetAccessControl();
+                        var currentUser = WindowsIdentity.GetCurrent().User;
+                        fileSecurity.SetOwner(currentUser);
+                        fileInfo.SetAccessControl(fileSecurity);
+
+                        var fullControlRule = new FileSystemAccessRule(currentUser, FileSystemRights.FullControl, AccessControlType.Allow);
+                        fileSecurity.AddAccessRule(fullControlRule);
+                        fileInfo.SetAccessControl(fileSecurity);
+
+                        logger.Report($"[Info] Successfully took ownership of '{filePath}'. Retrying deletion.");
+                    }
+                    catch (Exception permEx)
+                    {
+                        logger.Report($"[ERROR] Failed to take ownership of '{filePath}': {permEx.Message}");
+                        break; 
+                    }
+                }
+                catch (IOException ex) when (i < retries - 1)
+                {
+                    logger.Report($"[Info] Retrying delete for '{filePath}' due to IOException: {ex.Message}");
+                    Thread.Sleep(delay * (i + 1));
+                }
+                catch (Exception ex)
+                {
+                    logger.Report($"[ERROR] Failed to delete file '{filePath}': {ex.Message}");
+                    break;
                 }
             }
-            catch
+
+            if (File.Exists(filePath))
             {
-                try { File.Delete(filePath); } catch { }
+                logger.Report($"[ERROR] Critical failure: Unable to delete file '{filePath}' after multiple retries.");
             }
         }
 
