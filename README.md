@@ -13,6 +13,14 @@ FFLocker is a modern Windows application built with WinUI 3 that provides strong
 *   **Modern UI:** A clean and intuitive user interface built with WinUI 3, featuring Light and Dark mode support and a detailed log view.
 *   **Windows Context Menu:** Optionally integrate FFLocker into the Windows context menu for quick lock/unlock operations.
 
+## Demo
+
+
+https://github.com/user-attachments/assets/2ee4430e-4cc7-4fea-8e14-e22434490d24
+
+
+
+
 ## Getting Started
 
 ### Prerequisites
